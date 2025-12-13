@@ -3,52 +3,36 @@
 <head>
   <meta charset="utf-8" />
 
-  <!-- Pantalla completa / no zoom -->
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+  <!-- 🔽 50% más chico -->
+  <meta name="viewport" content="width=device-width,initial-scale=0.5,maximum-scale=0.5,user-scalable=no,viewport-fit=cover" />
   <meta name="theme-color" content="#000000" />
 
   <!-- “App mode” Android -->
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="application-name" content="Bitácora" />
 
-  <!-- iOS (por si lo abres en iPhone) -->
+  <!-- iOS (por si acaso) -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
   <link rel="manifest" href="./manifest.webmanifest" />
-
   <title>Bitácora</title>
 
   <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-      background: #000;
-      overflow: hidden;
-    }
-    .frame {
-      position: fixed;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      border: 0;
-      background: #fff;
-    }
+    html, body { height: 100%; margin: 0; background:#000; overflow:hidden; }
+    .frame { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background:#fff; }
   </style>
 </head>
 <body>
   <iframe id="appFrame" class="frame"></iframe>
 
   <script>
-    // TU WEBAPP /exec
     const BASE =
       "https://script.google.com/macros/s/AKfycbyNW2Ji6E1FpoB6qlQrpMYCx1QH_Xf0Z-PrRHSxuSb79YrG_FtlAITP4wtbmYF-aQjP-w/exec";
 
-    // Permite deep-links: si abres la PWA con ?new=1 o ?edit=123, se pasa al Apps Script
-    const url = BASE + (location.search || "") + (location.hash || "");
-    document.getElementById("appFrame").src = url;
+    // pasa query/hash al Apps Script si existen
+    document.getElementById("appFrame").src = BASE + (location.search || "") + (location.hash || "");
 
-    // SW mínimo
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js");
     }
