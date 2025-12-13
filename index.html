@@ -2,16 +2,12 @@
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-
-  <!-- 🔽 70% del tamaño -->
   <meta name="viewport" content="width=device-width,initial-scale=0.7,maximum-scale=0.7,user-scalable=no,viewport-fit=cover" />
   <meta name="theme-color" content="#000000" />
 
-  <!-- “App mode” Android -->
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="application-name" content="Bitácora" />
 
-  <!-- iOS (por si acaso) -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
@@ -30,10 +26,50 @@
     const BASE =
       "https://script.google.com/macros/s/AKfycbyNW2Ji6E1FpoB6qlQrpMYCx1QH_Xf0Z-PrRHSxuSb79YrG_FtlAITP4wtbmYF-aQjP-w/exec";
 
-    document.getElementById("appFrame").src = BASE + (location.search || "") + (location.hash || "");
+    // 🔽 Sube este número cuando quieras forzar refresh “visible”
+    const WRAPPER_VER = "1";
 
+    function buildUrl() {
+      // Pasa query/hash al Apps Script
+      // + cache-buster suave (no molesta al doGet)
+      const joiner = BASE.includes("?") ? "&" : "?";
+      const v = joiner + "wv=" + encodeURIComponent(WRAPPER_VER);
+
+      return BASE + v + (location.search ? "&" + location.search.slice(1) : "") + (location.hash || "");
+    }
+
+    function loadIframe(){
+      document.getElementById("appFrame").src = buildUrl();
+    }
+
+    loadIframe();
+
+    // ===== Service Worker: network-only + auto-update =====
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js");
+      navigator.serviceWorker.register("./sw.js").then((reg) => {
+        // Fuerza chequeo periódico (al abrir)
+        reg.update();
+
+        // Si hay una versión nueva, tomarla y recargar
+        reg.addEventListener("updatefound", () => {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+
+          newWorker.addEventListener("statechange", () => {
+            if (newWorker.state === "installed") {
+              // Si ya había un SW controlando, es update real
+              if (navigator.serviceWorker.controller) {
+                newWorker.postMessage({ type: "SKIP_WAITING" });
+              }
+            }
+          });
+        });
+      });
+
+      // Cuando el nuevo SW toma control, recargamos
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        window.location.reload();
+      });
     }
   </script>
 </body>
