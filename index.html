@@ -30,11 +30,11 @@
       </h2>
       <div style="display:flex; gap:10px; flex-wrap:wrap; width:100%;">
         <button id="btnSort" class="btn btn-sort" onclick="toggleOrden()" style="flex:1;">Más antiguos primero</button>
-        <button id="btnSync" class="btn btn-sort" onclick="syncAll()" style="flex:1;">Sincronizar</button>
-      </div>
+        </div>
     </div>
 
     <div id="status" class="empty">Cargando…</div>
+    <div id="lastSync" class="lastSync">Última sincronización: —</div>
     <div id="cards"></div>
 
     <div id="moreWrap" class="hidden">
@@ -72,7 +72,7 @@
           <div class="fieldLabel">Origen</div>
           <div class="aeroRow">
             <input id="origen" class="fieldBox iata" type="text" autocomplete="off" placeholder="SCKL"
-                   oninput="aeroInputChanged('origen')" onfocus="aeroOpen('origen')">
+                   oninput="this.value=(this.value||'').toUpperCase(); aeroInputChanged('origen')" onfocus="aeroOpen('origen')">
             <button id="btnAddOrigen" class="iconBtn" title="Agregar aeródromo" onclick="openAddAeroModal('origen')">+</button>
             <button class="iconBtn" title="Ver aeródromo" onclick="openViewAero('origen')">👁️</button>
           </div>
@@ -83,7 +83,7 @@
           <div class="fieldLabel">Destino</div>
           <div class="aeroRow">
             <input id="destino" class="fieldBox iata" type="text" autocomplete="off" placeholder="SCSA"
-                   oninput="aeroInputChanged('destino')" onfocus="aeroOpen('destino')">
+                   oninput="this.value=(this.value||'').toUpperCase(); aeroInputChanged('destino')" onfocus="aeroOpen('destino')">
             <button id="btnAddDestino" class="iconBtn" title="Agregar aeródromo" onclick="openAddAeroModal('destino')">+</button>
             <button class="iconBtn" title="Ver aeródromo" onclick="openViewAero('destino')">👁️</button>
           </div>
@@ -202,7 +202,7 @@
     <h3>Agregar Aeródromo</h3>
 
     <div class="fieldLabel" style="margin-top:6px;">Código</div>
-    <input id="newAeroCode" class="fieldBox iata" type="text" placeholder="SCKL" autocomplete="off">
+    <input id="newAeroCode" class="fieldBox iata" type="text" placeholder="SCKL" autocomplete="off" oninput="this.value=(this.value||'').toUpperCase()">
 
     <div class="fieldLabel" style="margin-top:12px;">Nombre</div>
     <input id="newAeroName" class="fieldBox" type="text" placeholder="Aeródromo ..." autocomplete="off">

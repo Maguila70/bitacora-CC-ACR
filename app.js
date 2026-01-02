@@ -104,6 +104,24 @@ function setStatus(msg){
   el.style.display = msg ? "block" : "none";
 }
 
+function formatLastSync(iso){
+  if(!iso) return "—";
+  try{
+    const d = new Date(iso);
+    if(isNaN(d.getTime())) return "—";
+    const pad = (n)=>String(n).padStart(2,'0');
+    return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }catch(_){ return "—"; }
+}
+function setLastSyncLabel(){
+  const el = document.getElementById("lastSync");
+  if(!el) return;
+  const iso = localStorage.getItem("lastSyncISO") || "";
+  el.textContent = "Última sincronización: " + formatLastSync(iso);
+}
+
+
+
 function setSyncStatus(msg){
   // Alias for UI status during sync
   try { setStatus(msg); } catch(_){
@@ -121,12 +139,17 @@ function setOnlineBadge(){
   const badge = $("netBadge");
   const text = $("netBadgeText");
   const on = isOnline();
-  badge.classList.toggle("online", on);
-  badge.classList.toggle("offline", !on);
-  text.textContent = on ? "Online" : "Offline";
+  if (badge) {
+    badge.classList.toggle("online", on);
+    badge.classList.toggle("offline", !on);
+  }
+  if (text) text.textContent = on ? "Online" : "Offline";
+
   // Reglas pedidas:
-  $("btnNew").disabled = !on;                 // “Nuevo” oscurecido offline
-  $("btnSync").disabled = !on;                // sync solo online (opcional)
+  const bn = $("btnNew");
+  if (bn) bn.disabled = !on; // “Nuevo” oscurecido offline
+
+  try{ setLastSyncLabel(); }catch(_){}
 }
 window.addEventListener("online", ()=>{ setOnlineBadge(); reiniciarLista(); });
 window.addEventListener("offline", ()=>{ setOnlineBadge(); reiniciarLista(); });
@@ -553,6 +576,8 @@ function setStickMode(mode){
   if (mode === "refuel") { stickMin=0; stickMax=40; stickStep=1; }
   else { stickMin=0; stickMax=8; stickStep=0.1; }
   renderScaleLabels();
+  const st = document.getElementById("stickTitle");
+  if (st) st.textContent = (mode === "refuel") ? "Cantidad" : "Stick";
 }
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 function roundToStep(v, step){
@@ -722,6 +747,15 @@ function openAddAeroModal(targetField){
   $("addAeroErr").textContent = "";
   $("newAeroCode").value = ($(targetField).value || "").trim().toUpperCase();
   $("newAeroName").value = "";
+
+  // Autocompletar nombre desde la web (OurAirports) si está online
+  const preCode = ($("newAeroCode").value || "").trim().toUpperCase();
+  if (preCode) {
+    lookupAerodromoName(preCode).then(nm => {
+      const ne = $("newAeroName");
+      if (ne && !ne.value && nm) ne.value = nm;
+    });
+  }
   $("addAeroModal").classList.remove("hidden");
   setTimeout(()=> $("newAeroName").focus(), 50);
 }
@@ -741,17 +775,24 @@ async function confirmAddAero(){
   if (!code) { if (errEl) errEl.textContent = "Código es obligatorio."; return; }
   if (!name) { if (errEl) errEl.textContent = "Nombre es obligatorio."; return; }
 
+  if (!navigator.onLine){
+    if (errEl) errEl.textContent = "Sin conexión: no se puede agregar aeródromo.";
+    return;
+  }
+
   showOverlay(true);
   try{
-    // JSONP GET para evitar CORS desde GitHub Pages
     const url = API_BASE + `?action=addAerodromo&code=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}`;
     const r1 = await jsonp(url);
     if (r1 && r1.ok === false) throw new Error(r1.error || "No se pudo agregar.");
 
-    // refrescar lista local
     const res = await jsonp(API_BASE + "?action=aerodromos");
     if (res && res.ok === false) throw new Error(res.error || "No se pudo refrescar aeródromos.");
-    AEROS = (res && res.aerodromos) ? res.aerodromos : (res || []);
+
+    const list = (res && res.aerodromos) ? res.aerodromos : (Array.isArray(res) ? res : []);
+    AEROS = list;
+
+    try{ if (typeof dbSetAerodromos === "function") await dbSetAerodromos(list); }catch(_){}
 
     closeAddAeroModal();
     if (addAeroTargetField) {
@@ -764,6 +805,19 @@ async function confirmAddAero(){
     showOverlay(false);
   }
 }
+
+async function lookupAerodromoName(code){
+  code = String(code||"").trim().toUpperCase();
+  if(!code) return "";
+  if(!navigator.onLine) return "";
+  try{
+    const res = await jsonp(API_BASE + `?action=lookupAerodromo&code=${encodeURIComponent(code)}`);
+    if(res && res.ok && res.found && res.name) return String(res.name);
+  }catch(_){}
+  return "";
+}
+
+
 
 function closeViewAeroModal(){ $("viewAeroModal").classList.add("hidden"); }
 function closeViewAeroIfBackdrop(e){ if (e.target && e.target.id === "viewAeroModal") closeViewAeroModal(); }
@@ -1048,6 +1102,28 @@ window.syncAll = syncAll;
 (async function boot(){
   try{
 setOnlineBadge();
+
+
+// Online/offline handlers
+setLastSyncLabel();
+
+window.addEventListener("online", async () => {
+  setOnlineBadge();
+  // Auto-sync al volver a estar online
+  try{
+    await syncAll();
+    await reiniciarLista();
+  }catch(err){
+    console.error(err);
+    setStatus("Error al sincronizar:\n" + (err && err.message ? err.message : String(err)));
+  }
+});
+
+window.addEventListener("offline", () => {
+  setOnlineBadge();
+  reiniciarLista();
+});
+
 
   // SW
   if ("serviceWorker" in navigator) {
