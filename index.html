@@ -228,6 +228,22 @@
   </div>
 </div>
 
-<script src="app.js"></script>
+<script>
+  // Fallback to avoid blank screen if an older cached app.js calls setSyncStatus before it exists.
+  window.setSyncStatus = window.setSyncStatus || function(msg) {
+    try {
+      const el = document.getElementById("status");
+      if (el) {
+        el.textContent = msg || "";
+        el.style.display = msg ? "block" : "none";
+      } else {
+        console.log("SYNC:", msg);
+      }
+    } catch(e) {
+      console.log("SYNC:", msg);
+    }
+  };
+</script>
+  <script src="app.js?v=20260102-01"></script>
 </body>
 </html>
