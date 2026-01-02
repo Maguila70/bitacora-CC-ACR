@@ -50,6 +50,56 @@ function jsonp(url, timeoutMs = 25000) {
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbzccbd9ojEI0dPlboUnip5Cv3t9WgVOHmtfdkbAnWrSvA7hShOiLuY2LVT0cLqJpa-YyA/exec";
 
+
+
+// ===== PWA install =====
+let deferredInstallPrompt = null;
+
+function isIos(){
+  return /iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+function isInStandalone(){
+  return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || (window.navigator.standalone === true);
+}
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  // Chrome/Edge Android/Desktop
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  const b = document.getElementById("btnInstall");
+  if (b && !isInStandalone()) b.classList.remove("hidden");
+});
+
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  const b = document.getElementById("btnInstall");
+  if (b) b.classList.add("hidden");
+});
+
+function installApp(){
+  const b = document.getElementById("btnInstall");
+
+  // iOS doesn't fire beforeinstallprompt
+  if (isIos() && !isInStandalone()){
+    alert("En iPhone/iPad: abre el menú Compartir (⤴︎) y elige 'Agregar a pantalla de inicio'.");
+    return;
+  }
+
+  if (!deferredInstallPrompt){
+    // No prompt available (already installed or browser doesn’t support)
+    if (b) b.classList.add("hidden");
+    return;
+  }
+
+  deferredInstallPrompt.prompt();
+  deferredInstallPrompt.userChoice.then(() => {
+    deferredInstallPrompt = null;
+    if (b) b.classList.add("hidden");
+  }).catch(() => {
+    // ignore
+  });
+}
+
 function apiConfigured(){
   return API_BASE && !/REEMPLAZA_/i.test(API_BASE) && /^https?:\/\//i.test(API_BASE);
 }
@@ -1137,7 +1187,7 @@ window.addEventListener("offline", () => {
 
   // SW
   if ("serviceWorker" in navigator) {
-    try{ await navigator.serviceWorker.register("sw.js"); } catch(e){ console.warn("SW fail", e); }
+    try{ await navigator.serviceWorker.register("sw.js?v=20260102-06"); } catch(e){ console.warn("SW fail", e); }
   }
 
   showList();
