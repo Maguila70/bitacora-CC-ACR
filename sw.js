@@ -1,18 +1,41 @@
-self.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
-});
+// Simple cache-first service worker for offline PWA
+const CACHE = "bitacora-pwa-v1";
+const ASSETS = [
+  "./",
+  "./index.html",
+  "./styles.css",
+  "./app.js",
+  "./manifest.json",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png",
+];
 
-self.addEventListener("install", () => {
-  self.skipWaiting();
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then(keys => Promise.all(keys.map(k => (k === CACHE) ? null : caches.delete(k)))).then(() => self.clients.claim())
+  );
 });
 
-// Network-only: siempre ir a red (no cachea nada)
 self.addEventListener("fetch", (event) => {
-  event.respondWith(fetch(event.request));
+  const req = event.request;
+  // Only handle GET
+  if (req.method !== "GET") return;
+
+  // Cache-first for same-origin
+  event.respondWith(
+    caches.match(req).then((cached) => {
+      if (cached) return cached;
+      return fetch(req).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE).then(cache => cache.put(req, copy)).catch(()=>{});
+        return res;
+      }).catch(() => cached);
+    })
+  );
 });

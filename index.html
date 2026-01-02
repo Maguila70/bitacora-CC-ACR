@@ -1,76 +1,233 @@
-<!doctype html>
-<html lang="es">
+<!DOCTYPE html>
+<html>
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=0.7,maximum-scale=0.7,user-scalable=no,viewport-fit=cover" />
-  <meta name="theme-color" content="#000000" />
-
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="application-name" content="Bitácora" />
-
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-
-  <link rel="manifest" href="./manifest.webmanifest" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Bitácora</title>
 
-  <style>
-    html, body { height: 100%; margin: 0; background:#000; overflow:hidden; }
-    .frame { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background:#fff; }
-  </style>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1976d2">
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- iOS icons -->
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
 </head>
+
 <body>
-  <iframe id="appFrame" class="frame"></iframe>
+<div id="loadingOverlay" class="loadingOverlay hidden">Cargando…</div>
 
-  <script>
-    const BASE =
-      "https://script.google.com/macros/s/AKfycbyNW2Ji6E1FpoB6qlQrpMYCx1QH_Xf0Z-PrRHSxuSb79YrG_FtlAITP4wtbmYF-aQjP-w/exec";
+<div class="wrap">
+  <div id="listView">
+    <div class="headerRow">
+      <h2>
+        Bitácora
+        <span id="netBadge" class="badge offline" title="Estado de conexión">
+          <span class="dot"></span><span id="netBadgeText">Offline</span>
+        </span>
+      </h2>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; width:100%;">
+        <button id="btnSort" class="btn btn-sort" onclick="toggleOrden()" style="flex:1;">Más antiguos primero</button>
+        <button id="btnSync" class="btn btn-sort" onclick="syncAll()" style="flex:1;">Sincronizar</button>
+      </div>
+    </div>
 
-    // 🔽 Sube este número cuando quieras forzar refresh “visible”
-    const WRAPPER_VER = "1";
+    <div id="status" class="empty">Cargando…</div>
+    <div id="cards"></div>
 
-    function buildUrl() {
-      // Pasa query/hash al Apps Script
-      // + cache-buster suave (no molesta al doGet)
-      const joiner = BASE.includes("?") ? "&" : "?";
-      const v = joiner + "wv=" + encodeURIComponent(WRAPPER_VER);
+    <div id="moreWrap" class="hidden">
+      <button class="btn btn-more" onclick="cargarMas()">Cargar más</button>
+    </div>
 
-      return BASE + v + (location.search ? "&" + location.search.slice(1) : "") + (location.hash || "");
-    }
+    <div class="spacer"></div>
+  </div>
 
-    function loadIframe(){
-      document.getElementById("appFrame").src = buildUrl();
-    }
+  <div id="editView" class="hidden">
+    <h2 id="title" class="editTitle"></h2>
 
-    loadIframe();
+    <div id="editCard" class="card" autocomplete="off">
+      <input type="hidden" id="mode" value="edit">
+      <input type="hidden" id="rowIndex" value="">
 
-    // ===== Service Worker: network-only + auto-update =====
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js").then((reg) => {
-        // Fuerza chequeo periódico (al abrir)
-        reg.update();
+      <div class="gridTop">
+        <div>
+          <div class="fieldLabel">Fecha</div>
+          <input id="fecha" class="fieldBox" type="date" autocomplete="off">
+        </div>
 
-        // Si hay una versión nueva, tomarla y recargar
-        reg.addEventListener("updatefound", () => {
-          const newWorker = reg.installing;
-          if (!newWorker) return;
+        <div>
+          <div class="fieldLabel">Landings</div>
+          <div class="stepper">
+            <button id="btnLandDec" class="stepBtn" type="button" onclick="decLandings()">−</button>
+            <input id="landings" class="stepInput" type="text" readonly value="1" inputmode="numeric">
+            <button id="btnLandInc" class="stepBtn" type="button" onclick="incLandings()">+</button>
+          </div>
+        </div>
+      </div>
 
-          newWorker.addEventListener("statechange", () => {
-            if (newWorker.state === "installed") {
-              // Si ya había un SW controlando, es update real
-              if (navigator.serviceWorker.controller) {
-                newWorker.postMessage({ type: "SKIP_WAITING" });
-              }
-            }
-          });
-        });
-      });
+      <div class="gridOD">
+        <div class="aeroWrap">
+          <div class="fieldLabel">Origen</div>
+          <div class="aeroRow">
+            <input id="origen" class="fieldBox" type="text" autocomplete="off" placeholder="SCKL"
+                   oninput="aeroInputChanged('origen')" onfocus="aeroOpen('origen')">
+            <button id="btnAddOrigen" class="iconBtn" title="Agregar aeródromo" onclick="openAddAeroModal('origen')">+</button>
+            <button class="iconBtn" title="Ver aeródromo" onclick="openViewAero('origen')">👁️</button>
+          </div>
+          <div id="dd_origen" class="dropdown hidden"></div>
+        </div>
 
-      // Cuando el nuevo SW toma control, recargamos
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
-        window.location.reload();
-      });
-    }
-  </script>
+        <div class="aeroWrap">
+          <div class="fieldLabel">Destino</div>
+          <div class="aeroRow">
+            <input id="destino" class="fieldBox" type="text" autocomplete="off" placeholder="SCSA"
+                   oninput="aeroInputChanged('destino')" onfocus="aeroOpen('destino')">
+            <button id="btnAddDestino" class="iconBtn" title="Agregar aeródromo" onclick="openAddAeroModal('destino')">+</button>
+            <button class="iconBtn" title="Ver aeródromo" onclick="openViewAero('destino')">👁️</button>
+          </div>
+          <div id="dd_destino" class="dropdown hidden"></div>
+        </div>
+      </div>
+
+      <div class="fuelArea">
+        <div class="fuelHeaderRow">
+          <div></div>
+          <div class="h">LEFT TANK (LTS)</div>
+          <div class="h">RIGHT TANK (LTS)</div>
+          <div id="stickTitle" class="stickTitle">Stick</div>
+        </div>
+
+        <div class="fuelGrid">
+          <div class="fuelRowLabel" style="grid-row:1; grid-column:1;">Initial</div>
+          <input id="fuel_ini_left"  class="fuelCell placeholder" readonly value="—" style="grid-row:1; grid-column:2;" onclick="selectFuel('fuel_ini_left','initfinal')">
+          <input id="fuel_ini_right" class="fuelCell placeholder" readonly value="—" style="grid-row:1; grid-column:3;" onclick="selectFuel('fuel_ini_right','initfinal')">
+
+          <div class="fuelRowLabel" style="grid-row:2; grid-column:1;">Refuel</div>
+          <input id="refuel_left"  class="fuelCell placeholder" readonly value="—" style="grid-row:2; grid-column:2;" onclick="selectFuel('refuel_left','refuel')">
+          <input id="refuel_right" class="fuelCell placeholder" readonly value="—" style="grid-row:2; grid-column:3;" onclick="selectFuel('refuel_right','refuel')">
+
+          <div class="fuelRowLabel" style="grid-row:3; grid-column:1;">Final</div>
+          <input id="fuel_fin_left"  class="fuelCell placeholder" readonly value="—" style="grid-row:3; grid-column:2;" onclick="selectFuel('fuel_fin_left','initfinal')">
+          <input id="fuel_fin_right" class="fuelCell placeholder" readonly value="—" style="grid-row:3; grid-column:3;" onclick="selectFuel('fuel_fin_right','initfinal')">
+
+          <div class="stickWrap">
+            <div id="stickBox" class="stickBox">
+              <div id="scaleLayer" class="scaleLayer"></div>
+
+              <div class="tick" style="top:10%"></div>
+              <div class="tick" style="top:20%"></div>
+              <div class="tick" style="top:30%"></div>
+              <div class="tick" style="top:40%"></div>
+              <div class="tick" style="top:50%"></div>
+              <div class="tick" style="top:60%"></div>
+              <div class="tick" style="top:70%"></div>
+              <div class="tick" style="top:80%"></div>
+              <div class="tick" style="top:90%"></div>
+
+              <div id="stickKnob" class="knob"></div>
+            </div>
+
+            <div id="stickValue" class="stickValue">—</div>
+          </div>
+        </div>
+
+        <div class="belowFuel">
+          <div class="checkRow">
+            <span>Refuel preflight</span>
+            <input id="preflight_refuel" type="checkbox" onchange="updateFuelUsed()">
+          </div>
+
+          <div id="fuelUsedWrap" class="fuelUsedBox hidden">
+            <div class="fuelUsedTitle">FUEL USED</div>
+            <div id="fuelUsedVal" class="fuelUsedVal">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sideFields">
+        <div class="gridOD">
+          <div>
+            <div class="fieldLabel">Oil Qty</div>
+
+            <input id="aceite" type="hidden" value="">
+
+            <div class="oilWrap" role="group" aria-label="Oil Qty">
+              <div class="oilSeg" data-norm="0"    onclick="setOilBarNorm(0)">0</div>
+              <div class="oilSeg" data-norm="0.25" onclick="setOilBarNorm(0.25)">1/4</div>
+              <div class="oilSeg" data-norm="0.5"  onclick="setOilBarNorm(0.5)">1/2</div>
+              <div class="oilSeg" data-norm="0.75" onclick="setOilBarNorm(0.75)">3/4</div>
+              <div class="oilSeg" data-norm="1"    onclick="setOilBarNorm(1)">Full</div>
+            </div>
+            <div id="oilHint" class="oilHint">Selecciona un nivel.</div>
+          </div>
+
+          <div>
+            <div class="fieldLabel">Hobbs</div>
+            <input id="hobbs" class="fieldBox" type="number" step="0.1" autocomplete="off" placeholder="Ej: 612.3">
+          </div>
+        </div>
+
+        <div class="obsBox">
+          <div class="fieldLabel">Observaciones</div>
+          <textarea id="observaciones" autocomplete="off" placeholder="Notas…"></textarea>
+        </div>
+      </div>
+
+      <div class="rowBtns">
+        <button class="btn btn-save" id="saveBtn" onclick="guardar()">Guardar</button>
+        <button class="btn btn-back" onclick="volver()">Volver</button>
+      </div>
+
+      <div id="formError" class="error"></div>
+    </div>
+
+    <div class="spacer"></div>
+  </div>
+
+</div>
+
+<div class="footer" id="footer">
+  <div class="inner">
+    <button id="btnNew" class="btn btn-new" onclick="nuevo()">Nuevo Vuelo</button>
+    <button class="btn btn-export" onclick="exportar()">Exportar</button>
+  </div>
+</div>
+
+<!-- Aeródromos: agregar -->
+<div id="addAeroModal" class="modalBackdrop hidden" onclick="closeAddAeroIfBackdrop(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <button class="modalCloseX" onclick="closeAddAeroModal()" aria-label="Cerrar">✕</button>
+    <h3>Agregar Aeródromo</h3>
+
+    <div class="fieldLabel" style="margin-top:6px;">Código</div>
+    <input id="newAeroCode" class="fieldBox" type="text" placeholder="SCKL" autocomplete="off">
+
+    <div class="fieldLabel" style="margin-top:12px;">Nombre</div>
+    <input id="newAeroName" class="fieldBox" type="text" placeholder="Aeródromo ..." autocomplete="off">
+
+    <div style="margin-top:14px; display:flex; gap:12px; flex-wrap:wrap;">
+      <button class="btn btn-save" onclick="confirmAddAero()">Agregar</button>
+      <button class="btn btn-back" onclick="closeAddAeroModal()">Cancelar</button>
+    </div>
+
+    <div id="addAeroErr" class="error"></div>
+  </div>
+</div>
+
+<!-- Aeródromos: ver -->
+<div id="viewAeroModal" class="modalBackdrop hidden" onclick="closeViewAeroIfBackdrop(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <button class="modalCloseX" onclick="closeViewAeroModal()" aria-label="Cerrar">✕</button>
+    <h3 id="viewAeroTitle">Aeródromo</h3>
+    <div id="viewAeroBody"></div>
+    <div style="margin-top:14px;">
+      <button class="btn btn-back" onclick="closeViewAeroModal()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
 </body>
 </html>
