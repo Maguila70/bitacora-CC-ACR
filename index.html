@@ -30,7 +30,8 @@
         </span>
       </h2>
       <div style="display:flex; gap:10px; flex-wrap:wrap; width:100%;">
-        <button id="btnSort" class="btn btn-sort" onclick="toggleOrden()" style="flex:1;">Más antiguos primero</button>
+        <button id="btnInstall" class="btn btn-sort hidden" onclick="doInstall()">Instalar</button>
+      <button id="btnSort" class="btn btn-sort" onclick="toggleOrden()" style="flex:1;">Más antiguos primero</button>
         </div>
     </div>
 
@@ -230,7 +231,7 @@
 </div>
 
 <script>
-  // Fallback to avoid blank screen if an older cached app.js calls setSyncStatus before it exists.
+  // Fallback to avoid blank screen if an older cached app.js?v=20260102-08 calls setSyncStatus before it exists.
   window.setSyncStatus = window.setSyncStatus || function(msg) {
     try {
       const el = document.getElementById("status");
@@ -245,6 +246,32 @@
     }
   };
 </script>
-  <script src="app.js?v=20260102-06"></script>
+  <script src="app.js?v=20260102-08"></script>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js', { scope: './' }).catch(console.warn);
+    });
+  }
+
+  let deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    const btn = document.getElementById('btnInstall');
+    if (btn) btn.classList.remove('hidden');
+  });
+
+  async function doInstall(){
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    const btn = document.getElementById('btnInstall');
+    if (btn) btn.classList.add('hidden');
+  }
+</script>
 </body>
+
 </html>
