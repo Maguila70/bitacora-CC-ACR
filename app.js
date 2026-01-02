@@ -114,10 +114,17 @@ function formatLastSync(iso){
   }catch(_){ return "—"; }
 }
 function setLastSyncLabel(){
-  const el = document.getElementById("lastSync");
-  if(!el) return;
   const iso = localStorage.getItem("lastSyncISO") || "";
-  el.textContent = "Última sincronización: " + formatLastSync(iso);
+  const text = "Última sincronización: " + formatLastSync(iso);
+
+  const el = document.getElementById("lastSync");
+  if (el) el.textContent = text;
+
+  const el2 = document.getElementById("lastSyncFixed");
+  if (el2) {
+    el2.textContent = text;
+    el2.classList.toggle("hidden", !iso);
+  }
 }
 
 
@@ -307,7 +314,10 @@ async function apiPost(action, payload){
 async function syncAll() {
   // Descarga en páginas para evitar límites de tamaño en Apps Script.
   setSyncStatus("Sincronizando…");
-  let offset = 0;
+  
+    localStorage.setItem('lastSyncISO', new Date().toISOString());
+    setLastSyncLabel();
+let offset = 0;
   const limit = 600;
   let total = null;
 
