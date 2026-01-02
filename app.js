@@ -725,33 +725,28 @@ function closeAddAeroModal(){ $("addAeroModal").classList.add("hidden"); }
 function closeAddAeroIfBackdrop(e){ if (e.target && e.target.id === "addAeroModal") closeAddAeroModal(); }
 
 async function confirmAddAero(){
-  if (!isOnline()) return;
   const code = ($("newAeroCode").value || "").trim().toUpperCase();
   const name = ($("newAeroName").value || "").trim();
   $("addAeroErr").textContent = "";
+
   if (!code) { $("addAeroErr").textContent = "Código es obligatorio."; return; }
   if (!name) { $("addAeroErr").textContent = "Nombre es obligatorio."; return; }
 
   showOverlay(true);
-  // JSONP GET para evitar CORS desde GitHub Pages
-const url = API_BASE + `?action=addAerodromo&code=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}`;
-jsonp(url)
-  .then(() => {
-    return jsonp(API_BASE + "?action=aerodromos");
-  })
-  .then((res) => {
+  try{
+    // JSONP GET para evitar CORS desde GitHub Pages
+    const url = API_BASE + `?action=addAerodromo&code=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}`;
+    await jsonp(url);
+
+    // refrescar lista local
+    const res = await jsonp(API_BASE + "?action=aerodromos");
     AEROS = (res && res.aerodromos) ? res.aerodromos : (res || []);
-    showOverlay(false);
+
     closeAddAeroModal();
     if (addAeroTargetField) {
-      document.getElementById(addAeroTargetField).value = code;
+      $(addAeroTargetField).value = code;
       addAeroTargetField = null;
     }
-  })
-  .catch((err) => {
-    showOverlay(false);
-    document.getElementById("addAeroErr").textContent = (err && err.message) ? err.message : String(err);
-  });
   } catch(err){
     $("addAeroErr").textContent = (err && err.message) ? err.message : String(err);
   } finally{
