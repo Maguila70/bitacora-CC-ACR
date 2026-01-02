@@ -49,7 +49,7 @@ function jsonp(url, timeoutMs = 25000) {
 }
 
 const API_BASE
- = "REEMPLAZA_CON_TU_URL_DE_APPS_SCRIPT_WEBAPP";
+ = "https://script.google.com/macros/s/AKfycbzccbd9ojEI0dPlboUnip5Cv3t9WgVOHmtfdkbAnWrSvA7hShOiLuY2LVT0cLqJpa-YyA/exec";
 
 function apiConfigured(){
   return API_BASE && !/REEMPLAZA_/i.test(API_BASE) && /^https?:\/\//i.test(API_BASE);
