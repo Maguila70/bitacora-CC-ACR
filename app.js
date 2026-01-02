@@ -48,8 +48,7 @@ function jsonp(url, timeoutMs = 25000) {
   });
 }
 
-const API_BASE
- = "https://script.google.com/macros/s/AKfycbzccbd9ojEI0dPlboUnip5Cv3t9WgVOHmtfdkbAnWrSvA7hShOiLuY2LVT0cLqJpa-YyA/exec";
+const API_BASE = "https://script.google.com/macros/s/AKfycbzccbd9ojEI0dPlboUnip5Cv3t9WgVOHmtfdkbAnWrSvA7hShOiLuY2LVT0cLqJpa-YyA/exec";
 
 function apiConfigured(){
   return API_BASE && !/REEMPLAZA_/i.test(API_BASE) && /^https?:\/\//i.test(API_BASE);
@@ -103,6 +102,17 @@ function setStatus(msg){
   const el = $("status");
   el.textContent = msg || "";
   el.style.display = msg ? "block" : "none";
+}
+
+function setSyncStatus(msg){
+  // Alias for UI status during sync
+  try { setStatus(msg); } catch(_){
+    const el = document.getElementById("status");
+    if (el) {
+      el.textContent = msg || "";
+      el.style.display = msg ? "block" : "none";
+    }
+  }
 }
 function setFormError(msg){ $("formError").textContent = msg || ""; }
 
