@@ -9,7 +9,61 @@
  */
 
 // ====================== CONFIG ======================
-const API_BASE = "https://script.google.com/macros/s/AKfycbzccbd9ojEI0dPlboUnip5Cv3t9WgVOHmtfdkbAnWrSvA7hShOiLuY2LVT0cLqJpa-YyA/exec"; // ej: https://script.google.com/macros/s/XXXX/exec
+function jsonp(url, timeoutMs = 25000) {
+  return new Promise((resolve, reject) => {
+    const cbName = "cb_" + Math.random().toString(36).slice(2);
+    const u = new URL(url);
+    u.searchParams.set("callback", cbName);
+    const script = document.createElement("script");
+    let done = false;
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error("JSONP timeout"));
+    }, timeoutMs);
+
+    function cleanup() {
+      clearTimeout(timer);
+      try { delete window[cbName]; } catch(_) { window[cbName] = undefined; }
+      if (script.parentNode) script.parentNode.removeChild(script);
+    }
+
+    window[cbName] = (data) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve(data);
+    };
+
+    script.onerror = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error("JSONP load error"));
+    };
+
+    script.src = u.toString();
+    document.head.appendChild(script);
+  });
+}
+
+const API_BASE
+ = "REEMPLAZA_CON_TU_URL_DE_APPS_SCRIPT_WEBAPP";
+
+function apiConfigured(){
+  return API_BASE && !/REEMPLAZA_/i.test(API_BASE) && /^https?:\/\//i.test(API_BASE);
+}
+function showFatal(msg){
+  // muestra algo SIEMPRE
+  const el = document.getElementById("status");
+  if (el){
+    el.textContent = msg;
+    el.style.display = "block";
+  } else {
+    alert(msg);
+  }
+} // ej: https://script.google.com/macros/s/XXXX/exec
 const PAGE_SIZE = 20;
 
 // ====================== KEYS (modelo) ======================
@@ -168,7 +222,13 @@ async function apiGet(params){
   if (!API_BASE || API_BASE.includes("REEMPLAZA_")) throw new Error("Configura API_BASE en app.js");
   const url = new URL(API_BASE);
   Object.entries(params || {}).forEach(([k,v])=> url.searchParams.set(k, String(v)));
-  const res = await fetch(url.toString(), { method:"GET", cache:"no-store" });
+  const res = await fetch(url.toString(), {
+    method:"GET",
+    cache:"no-store",
+    mode:"cors",
+    credentials:"omit",
+    redirect:"follow"
+  });
   if (!res.ok) throw new Error("HTTP " + res.status);
   return res.json();
 }
@@ -176,9 +236,14 @@ async function apiPost(action, payload){
   if (!API_BASE || API_BASE.includes("REEMPLAZA_")) throw new Error("Configura API_BASE en app.js");
   const url = new URL(API_BASE);
   url.searchParams.set("action", action);
+  // Importante: Si mandas application/json, el navegador hace preflight OPTIONS.
+  // Apps Script Web App NO soporta bien OPTIONS, así que mandamos text/plain para evitar el preflight.
   const res = await fetch(url.toString(), {
     method:"POST",
-    headers:{ "Content-Type":"application/json" },
+    mode:"cors",
+    credentials:"omit",
+    redirect:"follow",
+    headers:{ "Content-Type":"text/plain;charset=utf-8" },
     body: JSON.stringify(payload || {})
   });
   if (!res.ok) throw new Error("HTTP " + res.status);
@@ -186,34 +251,30 @@ async function apiPost(action, payload){
 }
 
 // ====================== Sync (first run + manual) ======================
-async function syncAll(){
-  if (!isOnline()) return;
-  showOverlay(true);
-  try{
-    setStatus("Sincronizando…");
-    const data = await apiGet({ action:"all" }); // {records:[], aerodromos:[]}
-    const records = (data.records || []).map(r => normalizeRecord(r));
-    const aeros = (data.aerodromos || []).map(a => ({ code:String(a.code||"").toUpperCase(), name:String(a.name||"") }));
+async function syncAll() {
+  // Descarga en páginas para evitar límites de tamaño en Apps Script.
+  setSyncStatus("Sincronizando…");
+  let offset = 0;
+  const limit = 600;
+  let total = null;
 
-    await dbClear(STORE_REC);
-    await dbPutMany(STORE_REC, records);
+  // Primera página trae aeródromos también
+  const first = await jsonp(API_BASE + `?action=all&offset=${offset}&limit=${limit}`);
+  if (!first || !first.ok) throw new Error((first && first.error) ? first.error : "Respuesta inválida");
+  if (first.aerodromos) await dbSetAerodromos(first.aerodromos);
+  await dbUpsertRegistros(first.registros || []);
+  total = first.total ?? null;
+  offset = first.nextOffset;
 
-    await dbClear(STORE_AER);
-    await dbPutMany(STORE_AER, aeros);
-
-    await dbSetMeta("lastSync", Date.now());
-
-    AEROS = aeros;
-    page = 0;
-    $("cards").innerHTML = "";
-    await cargarPagina();
-    setStatus("");
-  } catch(err){
-    console.error(err);
-    setStatus("Error al sincronizar:\n" + (err && err.message ? err.message : err));
-  } finally{
-    showOverlay(false);
+  while (offset != null) {
+    setSyncStatus(total ? `Sincronizando… ${Math.min(offset, total)}/${total}` : "Sincronizando…");
+    const page = await jsonp(API_BASE + `?action=all&offset=${offset}&limit=${limit}`);
+    if (!page || !page.ok) throw new Error((page && page.error) ? page.error : "Respuesta inválida");
+    await dbUpsertRegistros(page.registros || []);
+    offset = page.nextOffset;
   }
+
+  setSyncStatus("Sincronizado ✅");
 }
 
 // ====================== Data model helpers ======================
@@ -285,10 +346,12 @@ async function cargarPagina(){
   try{
     const all = await dbGetAll(STORE_REC);
     if (!all.length && isOnline()){
-      // primera vez (sin cache): auto sync
-      await syncAll();
-      return;
-    }
+  // primera vez (sin cache): auto sync
+  await syncAll();
+  loading = false;
+  // ahora que ya hay cache, cargamos la primera página
+  return await cargarPagina();
+}
 
     let recsAsc = computeFlightTimes(sortRecordsByDateAsc(all));
     let recs = recsAsc.slice();
@@ -930,7 +993,8 @@ window.setOilBarNorm = setOilBarNorm;
 window.syncAll = syncAll;
 
 (async function boot(){
-  setOnlineBadge();
+  try{
+setOnlineBadge();
 
   // SW
   if ("serviceWorker" in navigator) {
@@ -946,4 +1010,9 @@ window.syncAll = syncAll;
   // defaults
   setOilBarNorm("");
   setLandings(1);
+
+  } catch(err){
+    console.error(err);
+    showFatal('Error iniciando app:\n' + (err && err.message ? err.message : String(err)));
+  }
 })();
