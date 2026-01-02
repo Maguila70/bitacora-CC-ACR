@@ -71,7 +71,7 @@
         <div class="aeroWrap">
           <div class="fieldLabel">Origen</div>
           <div class="aeroRow">
-            <input id="origen" class="fieldBox" type="text" autocomplete="off" placeholder="SCKL"
+            <input id="origen" class="fieldBox iata" type="text" autocomplete="off" placeholder="SCKL"
                    oninput="aeroInputChanged('origen')" onfocus="aeroOpen('origen')">
             <button id="btnAddOrigen" class="iconBtn" title="Agregar aeródromo" onclick="openAddAeroModal('origen')">+</button>
             <button class="iconBtn" title="Ver aeródromo" onclick="openViewAero('origen')">👁️</button>
@@ -82,7 +82,7 @@
         <div class="aeroWrap">
           <div class="fieldLabel">Destino</div>
           <div class="aeroRow">
-            <input id="destino" class="fieldBox" type="text" autocomplete="off" placeholder="SCSA"
+            <input id="destino" class="fieldBox iata" type="text" autocomplete="off" placeholder="SCSA"
                    oninput="aeroInputChanged('destino')" onfocus="aeroOpen('destino')">
             <button id="btnAddDestino" class="iconBtn" title="Agregar aeródromo" onclick="openAddAeroModal('destino')">+</button>
             <button class="iconBtn" title="Ver aeródromo" onclick="openViewAero('destino')">👁️</button>
@@ -202,7 +202,7 @@
     <h3>Agregar Aeródromo</h3>
 
     <div class="fieldLabel" style="margin-top:6px;">Código</div>
-    <input id="newAeroCode" class="fieldBox" type="text" placeholder="SCKL" autocomplete="off">
+    <input id="newAeroCode" class="fieldBox iata" type="text" placeholder="SCKL" autocomplete="off">
 
     <div class="fieldLabel" style="margin-top:12px;">Nombre</div>
     <input id="newAeroName" class="fieldBox" type="text" placeholder="Aeródromo ..." autocomplete="off">
@@ -244,6 +244,6 @@
     }
   };
 </script>
-  <script src="app.js?v=20260102-03"></script>
+  <script src="app.js?v=20260102-04"></script>
 </body>
 </html>

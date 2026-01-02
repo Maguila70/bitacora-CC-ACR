@@ -665,11 +665,15 @@ function closeAllDropdowns(){
   ddEl("destino").classList.add("hidden");
 }
 function aeroOpen(field){
+    var el = document.getElementById(field);
+    if (el) el.value = String(el.value || '').toUpperCase();
   const v = ($(field).value || "");
   renderAeroDropdown(field, v);
 }
 function aeroInputChanged(field){
-  renderAeroDropdown(field, $(field).value || "");
+    var el = document.getElementById(field);
+    if (el) el.value = String(el.value || '').toUpperCase();
+    renderAeroDropdown(field, $(field).value || "");
 }
 function renderAeroDropdown(field, q){
   closeAllDropdowns();
@@ -725,21 +729,28 @@ function closeAddAeroModal(){ $("addAeroModal").classList.add("hidden"); }
 function closeAddAeroIfBackdrop(e){ if (e.target && e.target.id === "addAeroModal") closeAddAeroModal(); }
 
 async function confirmAddAero(){
-  const code = ($("newAeroCode").value || "").trim().toUpperCase();
-  const name = ($("newAeroName").value || "").trim();
-  $("addAeroErr").textContent = "";
+  const codeEl = $("newAeroCode");
+  const nameEl = $("newAeroName");
+  const errEl  = $("addAeroErr");
 
-  if (!code) { $("addAeroErr").textContent = "Código es obligatorio."; return; }
-  if (!name) { $("addAeroErr").textContent = "Nombre es obligatorio."; return; }
+  const code = ((codeEl && codeEl.value) ? codeEl.value : "").trim().toUpperCase();
+  const name = ((nameEl && nameEl.value) ? nameEl.value : "").trim();
+
+  if (errEl) errEl.textContent = "";
+
+  if (!code) { if (errEl) errEl.textContent = "Código es obligatorio."; return; }
+  if (!name) { if (errEl) errEl.textContent = "Nombre es obligatorio."; return; }
 
   showOverlay(true);
   try{
     // JSONP GET para evitar CORS desde GitHub Pages
     const url = API_BASE + `?action=addAerodromo&code=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}`;
-    await jsonp(url);
+    const r1 = await jsonp(url);
+    if (r1 && r1.ok === false) throw new Error(r1.error || "No se pudo agregar.");
 
     // refrescar lista local
     const res = await jsonp(API_BASE + "?action=aerodromos");
+    if (res && res.ok === false) throw new Error(res.error || "No se pudo refrescar aeródromos.");
     AEROS = (res && res.aerodromos) ? res.aerodromos : (res || []);
 
     closeAddAeroModal();
@@ -748,7 +759,7 @@ async function confirmAddAero(){
       addAeroTargetField = null;
     }
   } catch(err){
-    $("addAeroErr").textContent = (err && err.message) ? err.message : String(err);
+    if (errEl) errEl.textContent = (err && err.message) ? err.message : String(err);
   } finally{
     showOverlay(false);
   }

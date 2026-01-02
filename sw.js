@@ -1,5 +1,5 @@
 // Simple cache-first service worker for offline PWA
-const CACHE = "bitacora-pwa-20260102-03";
+const CACHE = "bitacora-pwa-20260102-04";
 const ASSETS = [
   "./",
   "./index.html",
