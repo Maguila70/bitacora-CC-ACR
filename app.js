@@ -9,7 +9,7 @@
  */
 
 // ====================== CONFIG ======================
-const API_BASE = "REEMPLAZA_CON_TU_URL_DE_APPS_SCRIPT_WEBAPP"; // ej: https://script.google.com/macros/s/XXXX/exec
+const API_BASE = "https://script.google.com/macros/s/AKfycbyNW2Ji6E1FpoB6qlQrpMYCx1QH_Xf0Z-PrRHSxuSb79YrG_FtlAITP4wtbmYF-aQjP-w/exec"; // ej: https://script.google.com/macros/s/XXXX/exec
 const PAGE_SIZE = 20;
 
 // ====================== KEYS (modelo) ======================
