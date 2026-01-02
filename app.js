@@ -141,7 +141,15 @@ function formatDateDDMMYYYY(d){
   const yy = String(dt.getFullYear());
   return `${dd}/${mm}/${yy}`;
 }
-function toYMD(v){
+function todayYMD(){
+    var d=new Date();
+    var y=d.getFullYear();
+    var m=String(d.getMonth()+1).padStart(2,'0');
+    var dd=String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${dd}`;
+  }
+
+  function toYMD(v){
   if (!v) return "";
   const dt = new Date(v);
   if (!isNaN(dt.getTime())) {
@@ -725,11 +733,25 @@ async function confirmAddAero(){
   if (!name) { $("addAeroErr").textContent = "Nombre es obligatorio."; return; }
 
   showOverlay(true);
-  try{
-    await apiPost("addAerodromo", { code, name });
-    await syncAerodromosOnly();
+  // JSONP GET para evitar CORS desde GitHub Pages
+const url = API_BASE + `?action=addAerodromo&code=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}`;
+jsonp(url)
+  .then(() => {
+    return jsonp(API_BASE + "?action=aerodromos");
+  })
+  .then((res) => {
+    AEROS = (res && res.aerodromos) ? res.aerodromos : (res || []);
+    showOverlay(false);
     closeAddAeroModal();
-    if (addAeroTargetField) { $(addAeroTargetField).value = code; addAeroTargetField = null; }
+    if (addAeroTargetField) {
+      document.getElementById(addAeroTargetField).value = code;
+      addAeroTargetField = null;
+    }
+  })
+  .catch((err) => {
+    showOverlay(false);
+    document.getElementById("addAeroErr").textContent = (err && err.message) ? err.message : String(err);
+  });
   } catch(err){
     $("addAeroErr").textContent = (err && err.message) ? err.message : String(err);
   } finally{
@@ -901,7 +923,10 @@ function nuevo(){
   $("title").textContent = "Nuevo Vuelo";
   $("saveBtn").textContent = "Agregar";
   showEdit();
-  setLandings(1);
+  
+    // Fecha por defecto: hoy
+    document.getElementById(KEYS.fecha).value = todayYMD();
+setLandings(1);
   selectFuel(KEYS.fuel_ini_left, "initfinal");
   setTimeout(()=>{ try{ $(KEYS.fecha).focus(); }catch(_){} }, 50);
 }
