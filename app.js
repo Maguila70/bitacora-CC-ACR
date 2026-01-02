@@ -227,6 +227,18 @@ async function dbGetMeta(key){
   return r ? r.value : null;
 }
 
+// ===== Convenience wrappers =====
+async function dbSetAerodromos(list){
+  // replace full list
+  await dbClear(STORE_AER);
+  return dbPutMany(STORE_AER, list || []);
+}
+async function dbUpsertRegistros(list){
+  // upsert by rowIndex
+  return dbPutMany(STORE_REC, list || []);
+}
+
+
 // ====================== Backend API ======================
 async function apiGet(params){
   if (!API_BASE || API_BASE.includes("REEMPLAZA_")) throw new Error("Configura API_BASE en app.js");
