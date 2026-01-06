@@ -6,14 +6,15 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>Bitácora <span class="badge" id="onlineBadge"><span class="dot" id="onlineDot"></span>Online</span></title>
+  <title>Bitácora</title>
 
-  <link rel="manifest" href="/bitacora-CC-ACR/manifest.json">
+  <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#1976d2">
   <link rel="stylesheet" href="styles.css">
 
   <!-- iOS icons -->
   <link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>html{-webkit-text-size-adjust:100%;text-size-adjust:100%;}</style>
 </head>
 
 <body>
@@ -245,19 +246,30 @@
 </script>
   <script src="app.js?v=20260102-08"></script>
 
-
-
 <script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/bitacora-CC-ACR/sw.js', {
-      scope: '/bitacora-CC-ACR/',
-      updateViaCache: 'none'
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/bitacora-CC-ACR/sw.js', { scope: '/bitacora-CC-ACR/' }).catch(console.warn);
     });
-  });
-}
-</script>
+  }
 
+  let deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    const btn = document.getElementById('btnInstall');
+    if (btn) btn.classList.remove('hidden');
+  });
+
+  async function doInstall(){
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    const btn = document.getElementById('btnInstall');
+    if (btn) btn.classList.add('hidden');
+  }
+</script>
 </body>
 
 </html>

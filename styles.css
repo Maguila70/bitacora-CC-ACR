@@ -373,3 +373,13 @@ body { font-family: Arial, sans-serif; background:var(--bg); -webkit-text-size-a
   background:#2e7d32;
 }
 .badge .dot.offline{ background:#c62828; }
+
+
+/* PWA install + Android font autosize fix */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;}
+h2{font-size:30px;line-height:1.15;margin:0;}
+.statusPill{font-size:14px;}
+.card h3{font-size:22px;margin:0;}
+.card .row strong{font-size:18px;}
+.card .row{font-size:16px;}
+@media (max-width:420px){h2{font-size:26px;}.card h3{font-size:20px;}.card .row{font-size:15px;}}

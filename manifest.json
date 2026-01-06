@@ -1,27 +1,26 @@
 {
   "name": "Bitácora",
   "short_name": "Bitácora",
-  "start_url": "/bitacora-CC-ACR/index.html",
-  "scope": "/bitacora-CC-ACR/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#f4f4f4",
   "theme_color": "#f4f4f4",
   "icons": [
     {
-      "src": "/bitacora-CC-ACR/icons/icon-192.png",
+      "src": "icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/bitacora-CC-ACR/icons/icon-512.png",
+      "src": "icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
     }
   ],
-  "id": "/bitacora-CC-ACR/",
+  "id": "./",
   "display_override": [
     "fullscreen",
     "standalone"
-  ],
-  "prefer_related_applications": false
+  ]
 }

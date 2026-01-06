@@ -1,8 +1,8 @@
 {
   "name": "Bitácora",
   "short_name": "Bitácora",
-  "start_url": "/bitacora-CC-ACR/",
-  "scope": "/bitacora-CC-ACR/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#f4f4f4",
   "theme_color": "#f4f4f4",
@@ -20,7 +20,7 @@
   ],
   "id": "./",
   "display_override": [
-    "fullscreen",
-    "standalone"
+    "standalone",
+    "fullscreen"
   ]
 }
