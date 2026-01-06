@@ -339,3 +339,24 @@ body { font-family: Arial, sans-serif; background:var(--bg); -webkit-text-size-a
   .oilSeg{ font-size:18px; }
   .oilWrap{ height:56px; }
 }
+
+
+.badge{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 12px;
+  border-radius:999px;
+  font-weight:900;
+  font-size:14px;
+  background:#e8f5e9;
+  color:#1b5e20;
+  margin-left:10px;
+  vertical-align:middle;
+}
+.badge.offline{ background:#ffebee; color:#b71c1c; }
+.badge .dot{
+  width:10px; height:10px; border-radius:50%;
+  background:#2e7d32;
+}
+.badge .dot.offline{ background:#c62828; }

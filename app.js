@@ -1164,3 +1164,14 @@ function forceUppercaseIcao(){
   });
 }
 window.addEventListener('DOMContentLoaded', forceUppercaseIcao);
+
+
+function initOnlineWatcher(){
+  function refresh(){ setOnlineBadge(!!navigator.onLine); }
+  window.addEventListener("online",  () => { refresh(); try{ onBecameOnline && onBecameOnline(); }catch(_){ }});
+  window.addEventListener("offline", () => { refresh(); });
+  refresh();
+}
+
+
+try{ initOnlineWatcher(); }catch(_){ }
