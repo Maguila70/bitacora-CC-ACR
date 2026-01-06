@@ -1,5 +1,5 @@
 /* Bitácora PWA Service Worker */
-const CACHE_NAME = "bitacora-cache-v20260106a";
+const CACHE_NAME = "bitacora-cache-v20260106b";
 const ASSETS = [
   "./",
   "./index.html",

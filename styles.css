@@ -1,10 +1,11 @@
+html{font-size:16px;}
 :root{
   --bg:#f4f4f4; --card:#fff; --shadow:0 2px 10px rgba(0,0,0,.14);
   --primary:#1976d2; --success:#28a745; --muted:#6c757d; --teal:#009688; --warn:#ff9800;
   --field:#ffffff; --fieldBorder:#cfcfcf; --active:#1976d2;
 }
 html, body { margin:0; padding:0; height:100%; }
-body { font-family: Arial, sans-serif; background:var(--bg); -webkit-text-size-adjust: 100%; }
+body { font-family: Arial, sans-serif; background:var(--bg); font-size:16px; -webkit-text-size-adjust: none; }
 .wrap { max-width:860px; margin:0 auto; padding:16px; }
 .card { background:var(--card); padding:16px; margin-bottom:14px; border-radius:16px; box-shadow:var(--shadow); }
 .hidden { display:none !important; }
