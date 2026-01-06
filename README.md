@@ -1,17 +1,10 @@
-# Bitácora PWA (GitHub Pages)
+# Bitácora CC-ACR (PWA)
 
-## Opción A (recomendada): GitHub Pages desde la raíz
-- En Settings → Pages:
-  - Source: Deploy from a branch
-  - Branch: main (o master)
-  - Folder: /(root)
-- Publica, y abre la URL de GitHub Pages.
-- Para instalar en Android (Chrome): menú ⋮ → “Instalar app” o “Agregar a pantalla principal”.
+Sube estos archivos al repo `bitacora-CC-ACR` y publica con GitHub Pages.
 
-## Opción B: GitHub Pages desde /docs
-- En Settings → Pages:
-  - Folder: /docs
-- Publica, y abre la URL.
+- Requiere HTTPS (GitHub Pages lo es).
+- Para instalar en Android: menú ⋮ de Chrome -> **Instalar aplicación**.
+- Si queda “instalada como web”, borra **almacenamiento del sitio** y vuelve a abrir.
 
-## Backend (Google Apps Script)
-En `app.js` está configurada `API_BASE`. Debe apuntar al Web App (exec) que entregue al menos `?action=all`.
+API usada:
+https://script.google.com/macros/s/AKfycbzccbd9ojEI0dPlboUnip5Cv3t9WgVOHmtfdkbAnWrSvA7hShOiLuY2LVT0cLqJpa-YyA/exec

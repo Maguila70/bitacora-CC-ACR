@@ -1,15 +1,17 @@
 {
   "name": "Bitácora",
   "short_name": "Bitácora",
-  "start_url": "./?source=pwa",
+  "description": "Bitácora CC-ACR (offline-first)",
+  "id": "./",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "display_override": [
-    "standalone",
-    "fullscreen"
+    "fullscreen",
+    "standalone"
   ],
   "background_color": "#f4f4f4",
-  "theme_color": "#f4f4f4",
+  "theme_color": "#1976d2",
   "icons": [
     {
       "src": "./icons/icon-192.png",
@@ -23,6 +25,5 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ],
-  "id": "./"
+  ]
 }

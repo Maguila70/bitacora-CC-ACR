@@ -1,74 +1,15 @@
-/* Bitácora PWA Service Worker */
-const CACHE_NAME = "bitacora-cache-v20260106-standalone1";
-const ASSETS = [
-  './index.html',
-  './styles.css',
-  './app.js',
-  './db.js',
-  './api.js',
-  './utils.js',
-  './manifest.webmanifest',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/icon-512-maskable.png'
-];
-
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
-  );
-});
-
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    (async () => {
-      const keys = await caches.keys();
-      await Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : Promise.resolve())));
-      await self.clients.claim();
-    })()
-  );
-});
-
-self.addEventListener("fetch", (event) => {
-  const req = event.request;
-  const url = new URL(req.url);
-
-  // Only handle same-origin navigations/assets
-  if (url.origin !== location.origin) return;
-
-  // Navigation: serve shell offline
-  if (req.mode === "navigate") {
-    event.respondWith(
-      (async () => {
-        try {
-          const net = await fetch(req);
-          // update cache
-          const cache = await caches.open(CACHE_NAME);
-          cache.put("./index.html", net.clone());
-          return net;
-        } catch (_) {
-          const cache = await caches.open(CACHE_NAME);
-          return (await cache.match("./index.html"))  || Response.error();
-        }
-      })()
-    );
-    return;
-  }
-
-  // Static assets: cache-first
-  event.respondWith(
-    (async () => {
-      const cache = await caches.open(CACHE_NAME);
-      const cached = await cache.match(req, { ignoreSearch: true });
-      if (cached) return cached;
-      try {
-        const net = await fetch(req);
-        // cache a copy (without query)
-        if (net && net.ok) cache.put(url.pathname.startsWith("/") ? url.pathname.slice(1) : url.pathname, net.clone());
-        return net;
-      } catch (_) {
-        return cached || Response.error();
-      }
-    })()
-  );
+const CACHE_NAME="bitacora-cache-v20260106f";
+const ASSETS=["./","./index.html","./styles.css","./app.js","./manifest.webmanifest",
+"./icons/icon-192.png","./icons/icon-512.png","./icons/apple-touch-icon.png"];
+self.addEventListener("install",e=>{e.waitUntil((async()=>{const c=await caches.open(CACHE_NAME);await c.addAll(ASSETS);self.skipWaiting();})())});
+self.addEventListener("activate",e=>{e.waitUntil((async()=>{for(const k of await caches.keys())if(k!==CACHE_NAME)await caches.delete(k);await self.clients.claim();})())});
+self.addEventListener("fetch",e=>{
+const url=new URL(e.request.url);
+if(url.origin!==self.location.origin) return;
+if(e.request.mode==="navigate"){
+e.respondWith((async()=>{const c=await caches.open(CACHE_NAME);try{const r=await fetch(e.request);c.put("./index.html",r.clone());return r;}catch(_){return (await c.match("./index.html"))||Response.error();}})());
+return;
+}
+e.respondWith((async()=>{const c=await caches.open(CACHE_NAME);const cached=await c.match(e.request);if(cached) return cached;
+try{const r=await fetch(e.request);if(e.request.method==="GET") c.put(e.request,r.clone());return r;}catch(_){return cached||Response.error();}})());
 });
