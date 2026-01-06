@@ -1,26 +1,28 @@
 {
   "name": "Bitácora",
   "short_name": "Bitácora",
-  "start_url": "./",
+  "start_url": "./?source=pwa",
   "scope": "./",
   "display": "standalone",
+  "display_override": [
+    "standalone",
+    "fullscreen"
+  ],
   "background_color": "#f4f4f4",
   "theme_color": "#f4f4f4",
   "icons": [
     {
-      "src": "icons/icon-192.png",
+      "src": "./icons/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
-      "src": "icons/icon-512.png",
+      "src": "./icons/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ],
-  "id": "./",
-  "display_override": [
-    "standalone",
-    "fullscreen"
-  ]
+  "id": "./"
 }
