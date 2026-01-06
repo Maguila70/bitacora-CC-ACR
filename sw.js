@@ -1,50 +1,71 @@
 /* Bitácora PWA Service Worker */
-const CACHE = "bitacora-pwa-20260102-08";
-const PRECACHE = [
+const CACHE_NAME = "bitacora-cache-v20260106a";
+const ASSETS = [
   "./",
   "./index.html",
+  "./styles.css",
+  "./app.js",
   "./manifest.json",
-  "./app.js?v=20260102-08",
-  "./icons/icon-180.png",
   "./icons/icon-192.png",
   "./icons/icon-512.png"
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PRECACHE)));
-  self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.map(k => (k !== CACHE ? caches.delete(k) : Promise.resolve()))))
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : Promise.resolve())));
+      await self.clients.claim();
+    })()
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
-  if (req.method !== "GET") return;
+  const url = new URL(req.url);
 
+  // Only handle same-origin navigations/assets
+  if (url.origin !== location.origin) return;
+
+  // Navigation: serve shell offline
   if (req.mode === "navigate") {
     event.respondWith(
-      fetch(req).then(res => {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put("./index.html", copy)).catch(()=>{});
-        return res;
-      }).catch(() => caches.match("./index.html"))
+      (async () => {
+        try {
+          const net = await fetch(req);
+          // update cache
+          const cache = await caches.open(CACHE_NAME);
+          cache.put("./index.html", net.clone());
+          return net;
+        } catch (_) {
+          const cache = await caches.open(CACHE_NAME);
+          return (await cache.match("./index.html")) || (await cache.match("./")) || Response.error();
+        }
+      })()
     );
     return;
   }
 
+  // Static assets: cache-first
   event.respondWith(
-    caches.match(req).then(cached => {
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match(req, { ignoreSearch: true });
       if (cached) return cached;
-      return fetch(req).then(res => {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(req, copy)).catch(()=>{});
-        return res;
-      }).catch(() => cached);
-    })
+      try {
+        const net = await fetch(req);
+        // cache a copy (without query)
+        if (net && net.ok) cache.put(url.pathname.startsWith("/") ? url.pathname.slice(1) : url.pathname, net.clone());
+        return net;
+      } catch (_) {
+        return cached || Response.error();
+      }
+    })()
   );
 });

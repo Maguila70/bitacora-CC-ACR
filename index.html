@@ -30,7 +30,7 @@
         </span>
       </h2>
       <div style="display:flex; gap:10px; flex-wrap:wrap; width:100%;">
-        <button id="btnInstall" class="btn btn-sort hidden" onclick="doInstall()">Instalar</button>
+        <button id="btnInstall" class="btn btn-sort" onclick="doInstall()">Instalar</button>
       <button id="btnSort" class="btn btn-sort" onclick="toggleOrden()" style="flex:1;">Más antiguos primero</button>
         </div>
     </div>
@@ -271,6 +271,50 @@
     const btn = document.getElementById('btnInstall');
     if (btn) btn.classList.add('hidden');
   }
+</script>
+<!-- Install PWA -->
+<script>
+(function(){
+  let deferredPrompt = null;
+  const btn = document.getElementById("btnInstall");
+  if (!btn) return;
+
+  function isStandalone(){
+    return window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
+  }
+
+  function showBtn(){
+    if (isStandalone()) { btn.classList.add("hidden"); return; }
+    btn.classList.remove("hidden");
+    btn.textContent = deferredPrompt ? "Instalar" : "Agregar a pantalla de inicio";
+  }
+
+  window.addEventListener("beforeinstallprompt", (e) => {
+    // Chrome Android: capture prompt
+    e.preventDefault();
+    deferredPrompt = e;
+    showBtn();
+  });
+
+  btn.addEventListener("click", async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      try { await deferredPrompt.userChoice; } catch(_){}
+      deferredPrompt = null;
+      showBtn();
+      return;
+    }
+    alert("En Chrome Android: toca el menú ⋮ y elige “Instalar app” o “Agregar a pantalla principal”.");
+  });
+
+  // If user installs, hide
+  window.addEventListener("appinstalled", () => {
+    deferredPrompt = null;
+    btn.classList.add("hidden");
+  });
+
+  showBtn();
+})();
 </script>
 </body>
 

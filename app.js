@@ -581,14 +581,14 @@ function setStickTitleForMode(mode){
   $("stickTitle").textContent = (mode === "refuel") ? "Cantidad" : "Stick";
 }
 function setStickMode(mode){
-    try{ var st=document.getElementById("stickTitle"); if(st) st.textContent = (mode==="refuel" ? "Cantidad" : "Stick"); }catch(_){ }
   activeFuelMode = mode;
-  setStickTitleForMode(mode);
-  if (mode === "refuel") { stickMin=0; stickMax=40; stickStep=1; }
-  else { stickMin=0; stickMax=8; stickStep=0.1; }
+  try{ setStickTitleForMode(mode); }catch(_){ }
+  if (mode === "refuel") {
+    stickMin = 0; stickMax = 40; stickStep = 1;
+  } else {
+    stickMin = 0; stickMax = 8; stickStep = 0.1;
+  }
   renderScaleLabels();
-  const st = document.getElementById("stickTitle");
-  if (st) st.textContent = (mode === "refuel") ? "Cantidad" : "Stick";
 }
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 function roundToStep(v, step){
