@@ -1,11 +1,11 @@
 /* Bitácora PWA Service Worker */
-const CACHE_NAME = "bitacora-cache-v20260106c";
+const CACHE_NAME = "bitacora-cache-v20260106d";
 const ASSETS = [
   "/bitacora-CC-ACR/",
   "/bitacora-CC-ACR/index.html",
   "/bitacora-CC-ACR/styles.css",
   "/bitacora-CC-ACR/app.js",
-  "/bitacora-CC-ACR/manifest.webmanifest",
+  "/bitacora-CC-ACR/manifest.json",
   "/bitacora-CC-ACR/icons/icon-192.png",
   "/bitacora-CC-ACR/icons/icon-512.png"
 ];
