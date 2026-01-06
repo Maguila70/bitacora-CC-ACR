@@ -1,40 +1,1177 @@
-const API_URL = "https://script.google.com/macros/s/AKfycbzccbd9ojEI0dPlboUnip5Cv3t9WgVOHmtfdkbAnWrSvA7hShOiLuY2LVT0cLqJpa-YyA/exec";
-const LS={get:(k,d=null)=>{try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},
-set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
-let RECORDS=LS.get("records",[]), AEROS=LS.get("aeros",[]);
-function isOnline(){return navigator.onLine===true}
-function updateBadge(){const dot=document.getElementById("statusDot");const txt=document.getElementById("statusText");
-if(isOnline()){dot.className="dot online";txt.textContent="Online";}else{dot.className="dot offline";txt.textContent="Offline";}
-document.getElementById("btnNew").disabled=!isOnline();
-document.getElementById("btnNew").style.opacity=isOnline()?"1":"0.55";
+/* Bitácora PWA (GitHub Pages) - Offline-first
+ * - Primera vez online: sincroniza TODO y lo guarda en IndexedDB
+ * - Offline: NO permite agregar/editar (cambia “Editar” por “Ver” y deshabilita “Nuevo Vuelo”)
+ * - Online: permite agregar/editar y vuelve a sincronizar cache al guardar
+ *
+ * CONFIG:
+ *  1) En Apps Script despliega el backend incluido en /apps-script (ver README)
+ *  2) Copia la URL del deployment y pégala en API_BASE
+ */
+
+// ====================== CONFIG ======================
+function jsonp(url, timeoutMs = 25000) {
+  return new Promise((resolve, reject) => {
+    const cbName = "cb_" + Math.random().toString(36).slice(2);
+    const u = new URL(url);
+    u.searchParams.set("callback", cbName);
+    const script = document.createElement("script");
+    let done = false;
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error("JSONP timeout"));
+    }, timeoutMs);
+
+    function cleanup() {
+      clearTimeout(timer);
+      try { delete window[cbName]; } catch(_) { window[cbName] = undefined; }
+      if (script.parentNode) script.parentNode.removeChild(script);
+    }
+
+    window[cbName] = (data) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve(data);
+    };
+
+    script.onerror = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error("JSONP load error"));
+    };
+
+    script.src = u.toString();
+    document.head.appendChild(script);
+  });
 }
-function setLastSync(v){document.getElementById("lastSyncLine").textContent="Última sincronización: "+(v||"—");}
-async function apiGet(action){const u=new URL(API_URL);u.searchParams.set("action",action);
-const r=await fetch(u.toString(),{cache:"no-store"});const t=await r.text();let j;try{j=JSON.parse(t)}catch(e){throw new Error(t)}
-if(!r.ok||j?.ok===false)throw new Error(j?.error||("HTTP "+r.status));return j}
-async function syncAll(){if(!isOnline())return;
-document.getElementById("status").textContent="Sincronizando…";
-try{const d=await apiGet("all");
-AEROS=(d.aerodromos||d.aeros||[]);RECORDS=(d.registros||d.records||d.items||[]);
-LS.set("aeros",AEROS);LS.set("records",RECORDS);
-const ts=new Date();const s=ts.toLocaleString("es-CL",{hour12:false});
-LS.set("lastSync",s);setLastSync(s);render();document.getElementById("status").textContent="";}
-catch(e){document.getElementById("status").textContent="Error: "+(e.message||e);}}
-function ymdToDDMM(ymd){if(!ymd)return "";const m=String(ymd).match(/^(\d{4})-(\d{2})-(\d{2})$/);if(!m)return String(ymd);return `${m[3]}/${m[2]}/${m[1]}`;}
-function render(){const c=document.getElementById("cards");c.innerHTML="";
-if(!RECORDS.length){c.innerHTML='<div class="empty">No hay registros.</div>';return;}
-for(const r of RECORDS){const f=ymdToDDMM(r.fecha||r.date||"");const o=(r.origen||"").toUpperCase();const d=(r.destino||"").toUpperCase();
-const hob=r.hobbs??"";const btn=isOnline()?"Editar":"Ver";
-c.insertAdjacentHTML("beforeend",`<div class="card">
-<div class="line-date">${f}</div>
-<div class="line2"><div class="route">${o} → ${d}</div><div class="hobbs"><b>Hobbs:</b> ${hob||"-"}</div></div>
-<div style="margin-top:14px;"><button class="btn btn-edit" onclick="alert('Editor completo incluido en versión larga; avísame si tu API usa add/update específicos para reactivarlo.')">${btn}</button></div>
-</div>`);}
+
+const API_BASE = "https://script.google.com/macros/s/AKfycbzccbd9ojEI0dPlboUnip5Cv3t9WgVOHmtfdkbAnWrSvA7hShOiLuY2LVT0cLqJpa-YyA/exec";
+
+function apiConfigured(){
+  return API_BASE && !/REEMPLAZA_/i.test(API_BASE) && /^https?:\/\//i.test(API_BASE);
 }
-document.addEventListener("DOMContentLoaded",()=>{
-updateBadge();setLastSync(LS.get("lastSync",""));
-render();
-if(isOnline() && !RECORDS.length) syncAll();
-window.addEventListener("online",()=>{updateBadge();syncAll();});
-window.addEventListener("offline",updateBadge);
+function showFatal(msg){
+  // muestra algo SIEMPRE
+  const el = document.getElementById("status");
+  if (el){
+    el.textContent = msg;
+    el.style.display = "block";
+  } else {
+    alert(msg);
+  }
+} // ej: https://script.google.com/macros/s/XXXX/exec
+const PAGE_SIZE = 20;
+
+// ====================== KEYS (modelo) ======================
+const KEYS = {
+  fecha: "fecha",
+  origen: "origen",
+  destino: "destino",
+  hobbs: "hobbs",
+  landings: "landings",
+  preflight_refuel: "preflight_refuel",
+  fuel_ini_left: "fuel_ini_left",
+  fuel_ini_right: "fuel_ini_right",
+  refuel_left: "refuel_left",
+  refuel_right: "refuel_right",
+  fuel_fin_left: "fuel_fin_left",
+  fuel_fin_right: "fuel_fin_right",
+  aceite: "aceite",
+  observaciones: "observaciones",
+};
+
+// ====================== UI state ======================
+let AEROS = [];
+let order = "desc";
+let page = 0;
+let hasMore = false;
+let loading = false;
+
+let activeFuelKey = null;
+let activeFuelMode = "initfinal";
+let stickMin = 0, stickMax = 8, stickStep = 0.1;
+let stickRaw = 0;
+
+// ====================== Helpers UI ======================
+function $(id){ return document.getElementById(id); }
+function showOverlay(on){ $("loadingOverlay").classList.toggle("hidden", !on); }
+function setStatus(msg){
+  const el = $("status");
+  el.textContent = msg || "";
+  el.style.display = msg ? "block" : "none";
+}
+
+function formatLastSync(iso){
+  if(!iso) return "—";
+  try{
+    const d = new Date(iso);
+    if(isNaN(d.getTime())) return "—";
+    const pad = (n)=>String(n).padStart(2,'0');
+    return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }catch(_){ return "—"; }
+}
+function setLastSyncLabel(){
+  const iso = localStorage.getItem("lastSyncISO") || "";
+  const text = "Última sincronización: " + formatLastSync(iso);
+
+  const el = document.getElementById("lastSync");
+  if (el) el.textContent = text;
+
+  const el2 = document.getElementById("lastSyncFixed");
+  if (el2) {
+    el2.textContent = text;
+    el2.classList.toggle("hidden", !iso);
+  }
+}
+
+
+
+function setSyncStatus(msg){
+  // Alias for UI status during sync
+  try { setStatus(msg); } catch(_){
+    const el = document.getElementById("status");
+    if (el) {
+      el.textContent = msg || "";
+      el.style.display = msg ? "block" : "none";
+    }
+  }
+}
+function setFormError(msg){ $("formError").textContent = msg || ""; }
+
+function isOnline(){ return navigator.onLine; }
+function setOnlineBadge(){
+  const badge = $("netBadge");
+  const text = $("netBadgeText");
+  const on = isOnline();
+  if (badge) {
+    badge.classList.toggle("online", on);
+    badge.classList.toggle("offline", !on);
+  }
+  if (text) text.textContent = on ? "Online" : "Offline";
+
+  // Reglas pedidas:
+  const bn = $("btnNew");
+  if (bn) bn.disabled = !on; // “Nuevo” oscurecido offline
+
+  try{ setLastSyncLabel(); }catch(_){}
+}
+window.addEventListener("online", ()=>{ setOnlineBadge(); reiniciarLista(); });
+window.addEventListener("offline", ()=>{ setOnlineBadge(); reiniciarLista(); });
+
+// ====================== Date/format ======================
+function formatDateDDMMYYYY(d){
+  if (!d) return "";
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return "";
+  const dd = String(dt.getDate()).padStart(2,"0");
+  const mm = String(dt.getMonth()+1).padStart(2,"0");
+  const yy = String(dt.getFullYear());
+  return `${dd}/${mm}/${yy}`;
+}
+function todayYMD(){
+    var d=new Date();
+    var y=d.getFullYear();
+    var m=String(d.getMonth()+1).padStart(2,'0');
+    var dd=String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${dd}`;
+  }
+
+  function toYMD(v){
+  if (!v) return "";
+  const dt = new Date(v);
+  if (!isNaN(dt.getTime())) {
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2,"0");
+    const d = String(dt.getDate()).padStart(2,"0");
+    return `${y}-${m}-${d}`;
+  }
+  return "";
+}
+function toNumberOrNull(v){
+  if (v == null) return null;
+  const s = String(v).trim().replace(",", ".");
+  if (!s || s === "—") return null;
+  const n = Number(s);
+  return isNaN(n) ? null : n;
+}
+function fmtInt(n){ return String(Math.round(n)); }
+function round1(n){ return (Math.round(n*10)/10).toFixed(1); }
+
+// ====================== IndexedDB (cache offline) ======================
+const DB_NAME = "bitacora_pwa";
+const DB_VER = 1;
+const STORE_REC = "records";
+const STORE_AER = "aerodromos";
+const STORE_META = "meta";
+
+function openDB(){
+  return new Promise((resolve, reject)=>{
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = (e)=>{
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE_REC)) db.createObjectStore(STORE_REC, { keyPath: "rowIndex" });
+      if (!db.objectStoreNames.contains(STORE_AER)) db.createObjectStore(STORE_AER, { keyPath: "code" });
+      if (!db.objectStoreNames.contains(STORE_META)) db.createObjectStore(STORE_META, { keyPath: "key" });
+    };
+    req.onsuccess = ()=>resolve(req.result);
+    req.onerror = ()=>reject(req.error);
+  });
+}
+async function dbPutMany(storeName, items){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(storeName, "readwrite");
+    const store = tx.objectStore(storeName);
+    items.forEach(it => store.put(it));
+    tx.oncomplete = ()=>resolve(true);
+    tx.onerror = ()=>reject(tx.error);
+  });
+}
+async function dbClear(storeName){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(storeName, "readwrite");
+    tx.objectStore(storeName).clear();
+    tx.oncomplete = ()=>resolve(true);
+    tx.onerror = ()=>reject(tx.error);
+  });
+}
+async function dbGetAll(storeName){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(storeName, "readonly");
+    const req = tx.objectStore(storeName).getAll();
+    req.onsuccess = ()=>resolve(req.result || []);
+    req.onerror = ()=>reject(req.error);
+  });
+}
+async function dbGet(storeName, key){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(storeName, "readonly");
+    const req = tx.objectStore(storeName).get(key);
+    req.onsuccess = ()=>resolve(req.result || null);
+    req.onerror = ()=>reject(req.error);
+  });
+}
+async function dbSetMeta(key, value){
+  return dbPutMany(STORE_META, [{ key, value }]);
+}
+async function dbGetMeta(key){
+  const r = await dbGet(STORE_META, key);
+  return r ? r.value : null;
+}
+
+// ===== Convenience wrappers =====
+async function dbSetAerodromos(list){
+  // replace full list
+  await dbClear(STORE_AER);
+  return dbPutMany(STORE_AER, list || []);
+}
+async function dbUpsertRegistros(list){
+  // upsert by rowIndex
+  return dbPutMany(STORE_REC, list || []);
+}
+
+
+// ====================== Backend API ======================
+async function apiGet(params){
+  if (!API_BASE || API_BASE.includes("REEMPLAZA_")) throw new Error("Configura API_BASE en app.js");
+  const url = new URL(API_BASE);
+  Object.entries(params || {}).forEach(([k,v])=> url.searchParams.set(k, String(v)));
+  const res = await fetch(url.toString(), {
+    method:"GET",
+    cache:"no-store",
+    mode:"cors",
+    credentials:"omit",
+    redirect:"follow"
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+async function apiPost(action, payload){
+  if (!API_BASE || API_BASE.includes("REEMPLAZA_")) throw new Error("Configura API_BASE en app.js");
+  const url = new URL(API_BASE);
+  url.searchParams.set("action", action);
+  // Importante: Si mandas application/json, el navegador hace preflight OPTIONS.
+  // Apps Script Web App NO soporta bien OPTIONS, así que mandamos text/plain para evitar el preflight.
+  const res = await fetch(url.toString(), {
+    method:"POST",
+    mode:"cors",
+    credentials:"omit",
+    redirect:"follow",
+    headers:{ "Content-Type":"text/plain;charset=utf-8" },
+    body: JSON.stringify(payload || {})
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
+// ====================== Sync (first run + manual) ======================
+async function syncAll() {
+  // Descarga en páginas para evitar límites de tamaño en Apps Script.
+  setSyncStatus("Sincronizando…");
+  
+    localStorage.setItem('lastSyncISO', new Date().toISOString());
+    setLastSyncLabel();
+let offset = 0;
+  const limit = 600;
+  let total = null;
+
+  // Primera página trae aeródromos también
+  const first = await jsonp(API_BASE + `?action=all&offset=${offset}&limit=${limit}`);
+  if (!first || !first.ok) throw new Error((first && first.error) ? first.error : "Respuesta inválida");
+  if (first.aerodromos) await dbSetAerodromos(first.aerodromos);
+  await dbUpsertRegistros(first.registros || []);
+  total = first.total ?? null;
+  offset = first.nextOffset;
+
+  while (offset != null) {
+    setSyncStatus(total ? `Sincronizando… ${Math.min(offset, total)}/${total}` : "Sincronizando…");
+    const page = await jsonp(API_BASE + `?action=all&offset=${offset}&limit=${limit}`);
+    if (!page || !page.ok) throw new Error((page && page.error) ? page.error : "Respuesta inválida");
+    await dbUpsertRegistros(page.registros || []);
+    offset = page.nextOffset;
+  }
+
+  setSyncStatus("Sincronizado ✅");
+}
+
+// ====================== Data model helpers ======================
+function normalizeRecord(r){
+  // asegura tipos razonables
+  const o = { ...r };
+  if (o.rowIndex != null) o.rowIndex = Number(o.rowIndex);
+  // fecha la guardamos como ISO yyyy-mm-dd para consistencia (en cache)
+  if (o.fecha) {
+    const dt = new Date(o.fecha);
+    if (!isNaN(dt.getTime())) o.fecha = dt.toISOString().slice(0,10);
+  }
+  // upper ICAO
+  if (o.origen) o.origen = String(o.origen).toUpperCase();
+  if (o.destino) o.destino = String(o.destino).toUpperCase();
+  return o;
+}
+
+function sortRecordsByDateAsc(records){
+  return records.slice().sort((a,b)=>{
+    const ta = a.fecha ? new Date(a.fecha).getTime() : 0;
+    const tb = b.fecha ? new Date(b.fecha).getTime() : 0;
+    if (ta === tb) return (a.rowIndex||0) - (b.rowIndex||0);
+    return ta - tb;
+  });
+}
+
+function computeFlightTimes(records){
+  // Asume records asc por fecha
+  let lastH = null;
+  const out = [];
+  for (const r of records){
+    const hobbs = toNumberOrNull(r.hobbs);
+    const prev = lastH;
+    const tf = (hobbs != null && prev != null) ? (hobbs - prev) : null;
+    out.push({
+      ...r,
+      _prevHobbs: prev,
+      _tf: (tf != null && tf >= 0) ? tf : null
+    });
+    if (hobbs != null) lastH = hobbs;
+  }
+  return out;
+}
+
+// ====================== List/Paging (offline from cache) ======================
+async function reiniciarLista(){
+  page = 0;
+  hasMore = false;
+  $("cards").innerHTML = "";
+  actualizarTextoBotonOrden();
+  await cargarPagina();
+}
+
+function actualizarTextoBotonOrden(){
+  const btn = $("btnSort");
+  btn.textContent = (order === "desc") ? "Más antiguos primero" : "Más recientes primero";
+}
+function toggleOrden(){
+  order = (order === "desc") ? "asc" : "desc";
+  actualizarTextoBotonOrden();
+  reiniciarLista();
+}
+
+async function cargarPagina(){
+  if (loading) return;
+  loading = true;
+  setStatus(page === 0 ? "Cargando registros…" : "Cargando más…");
+  try{
+    const all = await dbGetAll(STORE_REC);
+    if (!all.length && isOnline()){
+  // primera vez (sin cache): auto sync
+  await syncAll();
+  loading = false;
+  // ahora que ya hay cache, cargamos la primera página
+  return await cargarPagina();
+}
+
+    let recsAsc = computeFlightTimes(sortRecordsByDateAsc(all));
+    let recs = recsAsc.slice();
+    if (order === "desc") recs.reverse();
+
+    const start = page * PAGE_SIZE;
+    const end = start + PAGE_SIZE;
+    const slice = recs.slice(start, end);
+
+    renderAppend(slice.map(r => ({
+      rowIndex: r.rowIndex,
+      fecha: formatDateDDMMYYYY(r.fecha),
+      origen: r.origen || "",
+      destino: r.destino || "",
+      hobbs: (toNumberOrNull(r.hobbs) != null) ? round1(toNumberOrNull(r.hobbs)) : "",
+      tiempo_vuelo: (r._tf != null) ? round1(r._tf) : ""
+    })));
+
+    hasMore = end < recs.length;
+    $("moreWrap").classList.toggle("hidden", !hasMore);
+    setStatus("");
+  } catch(err){
+    console.error(err);
+    setStatus("Error cargando:\n" + (err && err.message ? err.message : err));
+  } finally{
+    loading = false;
+  }
+}
+function cargarMas(){ if (!hasMore) return; page += 1; cargarPagina(); }
+
+function renderAppend(items){
+  const cont = $("cards");
+  if ((!items || items.length === 0) && cont.innerHTML === "") {
+    cont.innerHTML = '<div class="empty">No hay registros.</div>';
+    return;
+  }
+  for (const r of items){
+    const canEdit = isOnline();
+    const label = canEdit ? "Editar" : "Ver";
+    cont.innerHTML +=
+      '<div class="card">' +
+        '<div class="line-date">' + (r.fecha || "") + '</div>' +
+        '<div class="line2">' +
+          '<div class="route">' + (r.origen || "") + ' → ' + (r.destino || "") + '</div>' +
+          '<div class="hobbs"><b>Hobbs:</b> ' + (r.hobbs || "-") + '</div>' +
+        '</div>' +
+        '<div class="tf"><b>Tiempo de vuelo:</b> ' + (r.tiempo_vuelo || "-") + '</div>' +
+        '<div style="margin-top:14px;">' +
+          '<button class="btn btn-edit" onclick="editar(' + r.rowIndex + ')">' + label + '</button>' +
+        '</div>' +
+      '</div>';
+  }
+}
+
+// ====================== Views ======================
+function showList(){
+  closeAddAeroModal();
+  closeViewAeroModal();
+  $("editView").classList.add("hidden");
+  $("listView").classList.remove("hidden");
+  $("footer").style.display = "block";
+}
+function showEdit(){
+  closeAddAeroModal();
+  closeViewAeroModal();
+  $("listView").classList.add("hidden");
+  $("editView").classList.remove("hidden");
+  $("footer").style.display = "none";
+}
+
+// ====================== Landings ======================
+function getLandings(){
+  const v = ($("landings").value || "").trim();
+  const n = parseInt(v,10);
+  return isNaN(n) ? 1 : n;
+}
+function setLandings(n){
+  n = parseInt(n,10);
+  if (isNaN(n)) n = 1;
+  if (n < 0) n = 0;
+  $("landings").value = String(n);
+}
+function incLandings(){ setLandings(getLandings()+1); }
+function decLandings(){ setLandings(getLandings()-1); }
+
+// ====================== Oil bar ======================
+function oilLabelFromNorm(norm){
+  const n = Number(norm);
+  if (!isFinite(n)) return "";
+  if (Math.abs(n - 0) < 1e-9) return "0";
+  if (Math.abs(n - 0.25) < 1e-9) return "1/4";
+  if (Math.abs(n - 0.5) < 1e-9) return "1/2";
+  if (Math.abs(n - 0.75) < 1e-9) return "3/4";
+  if (Math.abs(n - 1) < 1e-9) return "Full";
+  return String(n);
+}
+function normFromAnyOilValue(v){
+  if (v == null || v === "") return "";
+  if (typeof v === "number") return v;
+  const s = String(v).trim();
+  if (!s) return "";
+  const n = Number(s.replace(",", "."));
+  if (!isNaN(n)) return n;
+  const u = s.toLowerCase();
+  if (u === "full") return 1;
+  if (u === "0") return 0;
+  if (u === "1/4" || u === "¼") return 0.25;
+  if (u === "1/2" || u === "½") return 0.5;
+  if (u === "3/4" || u === "¾") return 0.75;
+  return "";
+}
+function setOilBarNorm(norm){
+  if (norm === "" || norm == null) {
+    $(KEYS.aceite).value = "";
+    document.querySelectorAll(".oilSeg").forEach(seg => seg.classList.remove("active"));
+    $("oilHint").textContent = "Selecciona un nivel.";
+    return;
+  }
+  let n = Number(norm);
+  if (!isFinite(n)) return;
+  n = Math.max(0, Math.min(1, n));
+  $(KEYS.aceite).value = String(n);
+
+  document.querySelectorAll(".oilSeg").forEach(seg => {
+    const sn = Number(seg.getAttribute("data-norm"));
+    seg.classList.toggle("active", Math.abs(sn - n) < 1e-9);
+  });
+  $("oilHint").textContent = "Seleccionado: " + oilLabelFromNorm(n);
+}
+
+// ====================== Fuel stick ======================
+function calcInitFinalLiters(rawVal){
+  const v = Number(rawVal);
+  if (!isFinite(v)) return 0;
+  if (Math.abs(v) < 1e-9) return 0;
+  const liters = (v * 4.54) + 4.1;
+  return Math.round(liters);
+}
+function setFuelDisplay(id, val){
+  const el = $(id);
+  if (val === "" || val == null || val === "—") {
+    el.value = "—";
+    el.classList.add("placeholder");
+  } else {
+    el.value = String(val);
+    el.classList.remove("placeholder");
+  }
+}
+function clearFuelActive(){
+  ["fuel_ini_left","fuel_ini_right","refuel_left","refuel_right","fuel_fin_left","fuel_fin_right"]
+    .forEach(id => $(id)?.classList.remove("active"));
+}
+function renderScaleLabels(){
+  const layer = $("scaleLayer");
+  layer.innerHTML = "";
+  const labels = (activeFuelMode === "refuel") ? [40, 30, 20, 10, 0] : [8,7,6,5,4,3,2,1,0];
+  labels.forEach(x=>{
+    const div = document.createElement("div");
+    div.textContent = x;
+    layer.appendChild(div);
+  });
+}
+function setStickTitleForMode(mode){
+  $("stickTitle").textContent = (mode === "refuel") ? "Cantidad" : "Stick";
+}
+function setStickMode(mode){
+  activeFuelMode = mode;
+  try{ setStickTitleForMode(mode); }catch(_){ }
+  if (mode === "refuel") {
+    stickMin = 0; stickMax = 40; stickStep = 1;
+  } else {
+    stickMin = 0; stickMax = 8; stickStep = 0.1;
+  }
+  renderScaleLabels();
+}
+function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+function roundToStep(v, step){
+  const r = Math.round(v/step)*step;
+  return parseFloat(r.toFixed(step < 1 ? 1 : 0));
+}
+function setKnobByPercent(p){
+  p = clamp(p,0,1);
+  const topPct = 10 + (80 * (1 - p));
+  $("stickKnob").style.top = topPct + "%";
+}
+function formatStickRaw(raw){
+  if (activeFuelMode === "refuel") return String(raw);
+  return Number(raw).toFixed(1);
+}
+function updateStickValueDisplay(rawVal){
+  $("stickValue").textContent = formatStickRaw(rawVal);
+}
+function writeActiveFieldFromRaw(rawVal){
+  if (!activeFuelKey) return;
+  updateStickValueDisplay(rawVal);
+  if (activeFuelMode === "refuel") setFuelDisplay(activeFuelKey, fmtInt(rawVal));
+  else setFuelDisplay(activeFuelKey, fmtInt(calcInitFinalLiters(rawVal)));
+  updateFuelUsed();
+}
+function selectFuel(fieldId, mode){
+  if (!isOnline() && $("editCard").classList.contains("readonly")) return;
+  clearFuelActive();
+  $(fieldId).classList.add("active");
+  activeFuelKey = fieldId;
+  setStickMode(mode);
+
+  const existing = $(fieldId).value;
+  if (existing && existing !== "—") {
+    const n = toNumberOrNull(existing);
+    if (n != null) {
+      if (mode === "refuel") stickRaw = clamp(roundToStep(n, stickStep), stickMin, stickMax);
+      else {
+        let raw = 0;
+        if (n > 0) raw = (n - 4.1) / 4.54;
+        stickRaw = clamp(roundToStep(raw, stickStep), stickMin, stickMax);
+      }
+      const p = (stickRaw - stickMin) / (stickMax - stickMin || 1);
+      setKnobByPercent(p);
+      updateStickValueDisplay(stickRaw);
+      return;
+    }
+  }
+  stickRaw = stickMin;
+  setKnobByPercent(0.5);
+  $("stickValue").textContent = "—";
+}
+
+function setFromPointer(clientY){
+  const box = $("stickBox");
+  const rect = box.getBoundingClientRect();
+  const y = clamp(clientY - rect.top, 0, rect.height);
+  const p = 1 - (y / rect.height);
+  let raw = stickMin + p * (stickMax - stickMin);
+  raw = clamp(roundToStep(raw, stickStep), stickMin, stickMax);
+  stickRaw = raw;
+
+  const p2 = (stickRaw - stickMin) / (stickMax - stickMin || 1);
+  setKnobByPercent(p2);
+  writeActiveFieldFromRaw(stickRaw);
+}
+
+(function initStickDrag(){
+  const box = $("stickBox");
+  box.addEventListener("pointerdown", function(e){
+    if ($("editCard").classList.contains("readonly")) return;
+    if (!activeFuelKey) selectFuel(KEYS.fuel_ini_left, "initfinal");
+    box.setPointerCapture(e.pointerId);
+    setFromPointer(e.clientY);
+  });
+  box.addEventListener("pointermove", function(e){
+    if ($("editCard").classList.contains("readonly")) return;
+    if (box.hasPointerCapture && box.hasPointerCapture(e.pointerId)) setFromPointer(e.clientY);
+  });
+  box.addEventListener("pointerup", function(e){
+    try{ box.releasePointerCapture(e.pointerId); }catch(_){}
+  });
+})();
+
+function updateFuelUsed(){
+  const iniL = toNumberOrNull($(KEYS.fuel_ini_left).value);
+  const iniR = toNumberOrNull($(KEYS.fuel_ini_right).value);
+  const finL = toNumberOrNull($(KEYS.fuel_fin_left).value);
+  const finR = toNumberOrNull($(KEYS.fuel_fin_right).value);
+
+  const show = (iniL != null && iniR != null && finL != null && finR != null);
+  const wrap = $("fuelUsedWrap");
+  if (!show){ wrap.classList.add("hidden"); return; }
+
+  const useRefuel = $(KEYS.preflight_refuel).checked;
+  const refL = useRefuel ? (toNumberOrNull($(KEYS.refuel_left).value) || 0) : 0;
+  const refR = useRefuel ? (toNumberOrNull($(KEYS.refuel_right).value) || 0) : 0;
+
+  let used = (iniL + iniR + refL + refR) - (finL + finR);
+  if (used < 0) used = 0;
+
+  $("fuelUsedVal").textContent = fmtInt(used) + " L";
+  wrap.classList.remove("hidden");
+}
+
+// ====================== Aeródromos UI ======================
+function ddEl(field){ return $("dd_" + field); }
+function closeAllDropdowns(){
+  ddEl("origen").classList.add("hidden");
+  ddEl("destino").classList.add("hidden");
+}
+function aeroOpen(field){
+    var el = document.getElementById(field);
+    if (el) el.value = String(el.value || '').toUpperCase();
+  const v = ($(field).value || "");
+  renderAeroDropdown(field, v);
+}
+function aeroInputChanged(field){
+    var el = document.getElementById(field);
+    if (el) el.value = String(el.value || '').toUpperCase();
+    renderAeroDropdown(field, $(field).value || "");
+}
+function renderAeroDropdown(field, q){
+  closeAllDropdowns();
+  const dd = ddEl(field);
+  const query = String(q || "").trim().toUpperCase();
+  if (!query) { dd.innerHTML = ""; dd.classList.add("hidden"); return; }
+
+  let items = AEROS;
+  items = items.filter(a => a.code.includes(query) || (a.name||"").toUpperCase().includes(query)).slice(0, 40);
+
+  if (!items.length) {
+    dd.innerHTML = '<div class="ddItem"><div><span class="ddCode">Sin resultados</span><div class="ddName">Usa + para agregar.</div></div></div>';
+    dd.classList.remove("hidden");
+    return;
+  }
+  dd.innerHTML = items.map(a => `
+    <div class="ddItem" onclick="aeroSelect('${field}', '${escapeQuotes(a.code)}')">
+      <div>
+        <div class="ddCode">${escapeHtml(a.code)}</div>
+        <div class="ddName">${escapeHtml(a.name || "")}</div>
+      </div>
+      <div style="color:#999; font-weight:900;">›</div>
+    </div>
+  `).join("");
+  dd.classList.remove("hidden");
+}
+function aeroSelect(field, code){
+  $(field).value = String(code || "").toUpperCase();
+  closeAllDropdowns();
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, m => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;" }[m]));
+}
+function escapeQuotes(s){ return String(s).replace(/'/g, "\\'"); }
+document.addEventListener("click", function(e){
+  const t = e.target;
+  if (!t.closest || !t.closest(".aeroWrap")) closeAllDropdowns();
 });
+
+// ====================== Aeródromos: agregar/ver ======================
+let addAeroTargetField = null;
+
+function openAddAeroModal(targetField){
+  if (!isOnline()) return;
+  addAeroTargetField = targetField;
+  $("addAeroErr").textContent = "";
+  $("newAeroCode").value = ($(targetField).value || "").trim().toUpperCase();
+  $("newAeroName").value = "";
+
+  // Autocompletar nombre desde la web (OurAirports) si está online
+  const preCode = ($("newAeroCode").value || "").trim().toUpperCase();
+  if (preCode) {
+    lookupAerodromoName(preCode).then(nm => {
+      const ne = $("newAeroName");
+      if (ne && !ne.value && nm) ne.value = nm;
+    });
+  }
+  $("addAeroModal").classList.remove("hidden");
+  setTimeout(()=> $("newAeroName").focus(), 50);
+}
+function closeAddAeroModal(){ $("addAeroModal").classList.add("hidden"); }
+function closeAddAeroIfBackdrop(e){ if (e.target && e.target.id === "addAeroModal") closeAddAeroModal(); }
+
+async function confirmAddAero(){
+  const codeEl = $("newAeroCode");
+  const nameEl = $("newAeroName");
+  const errEl  = $("addAeroErr");
+
+  const code = ((codeEl && codeEl.value) ? codeEl.value : "").trim().toUpperCase();
+  const name = ((nameEl && nameEl.value) ? nameEl.value : "").trim();
+
+  if (errEl) errEl.textContent = "";
+
+  if (!code) { if (errEl) errEl.textContent = "Código es obligatorio."; return; }
+  if (!name) { if (errEl) errEl.textContent = "Nombre es obligatorio."; return; }
+
+  if (!navigator.onLine){
+    if (errEl) errEl.textContent = "Sin conexión: no se puede agregar aeródromo.";
+    return;
+  }
+
+  showOverlay(true);
+  try{
+    const url = API_BASE + `?action=addAerodromo&code=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}`;
+    const r1 = await jsonp(url);
+    if (r1 && r1.ok === false) throw new Error(r1.error || "No se pudo agregar.");
+
+    const res = await jsonp(API_BASE + "?action=aerodromos");
+    if (res && res.ok === false) throw new Error(res.error || "No se pudo refrescar aeródromos.");
+
+    const list = (res && res.aerodromos) ? res.aerodromos : (Array.isArray(res) ? res : []);
+    AEROS = list;
+
+    try{ if (typeof dbSetAerodromos === "function") await dbSetAerodromos(list); }catch(_){}
+
+    closeAddAeroModal();
+    if (addAeroTargetField) {
+      $(addAeroTargetField).value = code;
+      addAeroTargetField = null;
+    }
+  } catch(err){
+    if (errEl) errEl.textContent = (err && err.message) ? err.message : String(err);
+  } finally{
+    showOverlay(false);
+  }
+}
+
+async function lookupAerodromoName(code){
+  code = String(code||"").trim().toUpperCase();
+  if(!code) return "";
+  if(!navigator.onLine) return "";
+  try{
+    const res = await jsonp(API_BASE + `?action=lookupAerodromo&code=${encodeURIComponent(code)}`);
+    if(res && res.ok && res.found && res.name) return String(res.name);
+  }catch(_){}
+  return "";
+}
+
+
+
+function closeViewAeroModal(){ $("viewAeroModal").classList.add("hidden"); }
+function closeViewAeroIfBackdrop(e){ if (e.target && e.target.id === "viewAeroModal") closeViewAeroModal(); }
+
+async function openViewAero(field){
+  const code = ($(field).value || "").trim().toUpperCase();
+  if (!code) { alert("Ingresa o selecciona un código primero."); return; }
+
+  showOverlay(true);
+  try{
+    let res = null;
+    if (isOnline()){
+      res = await apiGet({ action:"aeroDetail", code });
+    } else {
+      // offline: buscamos en cache simple (solo code+name)
+      const a = AEROS.find(x => x.code === code);
+      if (a) {
+        res = { found:true, code, fields:[ {label:"Código", value:code}, {label:"Nombre", value:a.name||""} ] };
+      } else {
+        res = { found:false, code };
+      }
+    }
+
+    if (!res || !res.found) { alert("No encontrado en Aeródromos: " + code); return; }
+
+    $("viewAeroTitle").textContent = "Aeródromo " + code;
+    $("viewAeroBody").innerHTML = (res.fields || []).map(f => `
+      <div class="kv">
+        <b>${escapeHtml(f.label || "")}</b>
+        <div>${escapeHtml(f.value || "")}</div>
+      </div>
+    `).join("");
+    $("viewAeroModal").classList.remove("hidden");
+  } catch(err){
+    alert("Error: " + ((err && err.message) ? err.message : err));
+  } finally{
+    showOverlay(false);
+  }
+}
+
+async function syncAerodromosOnly(){
+  const list = await apiGet({ action:"aerodromos" });
+  AEROS = (list.aerodromos || []).map(a => ({ code:String(a.code||"").toUpperCase(), name:String(a.name||"") }));
+  await dbClear(STORE_AER);
+  await dbPutMany(STORE_AER, AEROS);
+}
+
+// ====================== Edit form ======================
+function resetEditUI(){
+  closeAllDropdowns();
+  setFormError("");
+
+  ["fecha","origen","destino","hobbs","observaciones"].forEach(id => { if ($(id)) $(id).value = ""; });
+  $(KEYS.preflight_refuel).checked = false;
+
+  setFuelDisplay(KEYS.fuel_ini_left, "—");
+  setFuelDisplay(KEYS.fuel_ini_right, "—");
+  setFuelDisplay(KEYS.refuel_left, "—");
+  setFuelDisplay(KEYS.refuel_right, "—");
+  setFuelDisplay(KEYS.fuel_fin_left, "—");
+  setFuelDisplay(KEYS.fuel_fin_right, "—");
+  $("fuelUsedWrap").classList.add("hidden");
+
+  setOilBarNorm("");
+  setLandings(1);
+
+  clearFuelActive();
+  activeFuelKey = null;
+  setStickMode("initfinal");
+  setKnobByPercent(0.5);
+  $("stickValue").textContent = "—";
+
+  // editable by default
+  setReadonlyMode(false);
+}
+
+function setReadonlyMode(on){
+  $("editCard").classList.toggle("readonly", !!on);
+
+  // inputs
+  ["fecha","origen","destino","hobbs"].forEach(id => { if ($(id)) $(id).readOnly = !!on; });
+  $("observaciones").readOnly = !!on;
+
+  // checkbox
+  $(KEYS.preflight_refuel).disabled = !!on;
+
+  // landings + aero add buttons
+  $("btnLandDec").disabled = !!on;
+  $("btnLandInc").disabled = !!on;
+  $("btnAddOrigen").disabled = !!on;
+  $("btnAddDestino").disabled = !!on;
+
+  // save button
+  $("saveBtn").classList.toggle("hidden", !!on);
+}
+
+function fillEditFromObj(o){
+  $(KEYS.fecha).value = toYMD(o[KEYS.fecha] || o.fecha);
+  $(KEYS.origen).value = (o[KEYS.origen] || "").toString().toUpperCase();
+  $(KEYS.destino).value = (o[KEYS.destino] || "").toString().toUpperCase();
+  $(KEYS.hobbs).value = (o[KEYS.hobbs] ?? "").toString().replace(",", ".");
+
+  const land = o[KEYS.landings];
+  let landNum = (typeof land === "number") ? land : parseInt(String(land || ""), 10);
+  if (isNaN(landNum)) landNum = 1;
+  setLandings(landNum);
+
+  $(KEYS.preflight_refuel).checked = (o[KEYS.preflight_refuel] === true || String(o[KEYS.preflight_refuel]).toUpperCase() === "TRUE");
+
+  setFuelDisplay(KEYS.fuel_ini_left,  o[KEYS.fuel_ini_left]  ?? "—");
+  setFuelDisplay(KEYS.fuel_ini_right, o[KEYS.fuel_ini_right] ?? "—");
+  setFuelDisplay(KEYS.refuel_left,    o[KEYS.refuel_left]    ?? "—");
+  setFuelDisplay(KEYS.refuel_right,   o[KEYS.refuel_right]   ?? "—");
+  setFuelDisplay(KEYS.fuel_fin_left,  o[KEYS.fuel_fin_left]  ?? "—");
+  setFuelDisplay(KEYS.fuel_fin_right, o[KEYS.fuel_fin_right] ?? "—");
+
+  const norm = normFromAnyOilValue(o[KEYS.aceite]);
+  setOilBarNorm(norm === "" ? "" : norm);
+
+  $(KEYS.observaciones).value = o[KEYS.observaciones] || "";
+
+  updateFuelUsed();
+
+  // editar: foco inicial en Fecha (pedido original)
+  clearFuelActive();
+  activeFuelKey = null;
+  setStickMode("initfinal");
+  setKnobByPercent(0.5);
+  $("stickValue").textContent = "—";
+}
+
+async function editar(rowIndex){
+  resetEditUI();
+  $("mode").value = "edit";
+  $("rowIndex").value = String(rowIndex);
+  $("title").textContent = isOnline() ? "Editar Registro de Vuelo" : "Ver Registro de Vuelo";
+  $("saveBtn").textContent = "Guardar";
+  showEdit();
+
+  showOverlay(true);
+  try{
+    // offline: del cache
+    const rec = await dbGet(STORE_REC, Number(rowIndex));
+    if (!rec) throw new Error("No encontrado en cache (sync requerido).");
+    fillEditFromObj(rec);
+
+    // offline => readonly
+    setReadonlyMode(!isOnline());
+
+    setTimeout(()=>{ try{ $(KEYS.fecha).focus(); }catch(_){} }, 50);
+  } catch(err){
+    setFormError("Error cargando registro:\n" + (err && err.message ? err.message : err));
+  } finally{
+    showOverlay(false);
+  }
+}
+
+function nuevo(){
+  if (!isOnline()) return;
+  resetEditUI();
+  $("mode").value = "new";
+  $("rowIndex").value = "";
+  $("title").textContent = "Nuevo Vuelo";
+  $("saveBtn").textContent = "Agregar";
+  showEdit();
+  
+    // Fecha por defecto: hoy
+    document.getElementById(KEYS.fecha).value = todayYMD();
+setLandings(1);
+  try{ document.getElementById('fecha')?.focus(); }catch(_){ }setTimeout(()=>{ try{ $(KEYS.fecha).focus(); }catch(_){} }, 50);
+}
+
+async function guardar(){
+  if (!isOnline()) return;
+  setFormError("");
+
+  const mode = $("mode").value;
+  const rowIndex = Number($("rowIndex").value);
+
+  const fechaYmd = $(KEYS.fecha).value;
+  if (!fechaYmd) { setFormError("Fecha es obligatoria."); return; }
+
+  const origen = $(KEYS.origen).value.trim().toUpperCase();
+  const destino = $(KEYS.destino).value.trim().toUpperCase();
+  if (!origen) { setFormError("Origen es obligatorio."); return; }
+  if (!destino) { setFormError("Destino es obligatorio."); return; }
+
+  function valFuel(id){
+    const v = $(id).value;
+    if (!v || v === "—") return "";
+    return String(v).trim().replace(",", ".");
+  }
+
+  const data = {};
+  data[KEYS.fecha] = fechaYmd;
+  data[KEYS.origen] = origen;
+  data[KEYS.destino] = destino;
+  data[KEYS.hobbs] = String($(KEYS.hobbs).value || "").trim().replace(",", ".");
+  data[KEYS.landings] = String(getLandings());
+  data[KEYS.preflight_refuel] = $(KEYS.preflight_refuel).checked;
+
+  data[KEYS.fuel_ini_left] = valFuel(KEYS.fuel_ini_left);
+  data[KEYS.fuel_ini_right] = valFuel(KEYS.fuel_ini_right);
+  data[KEYS.refuel_left] = valFuel(KEYS.refuel_left);
+  data[KEYS.refuel_right] = valFuel(KEYS.refuel_right);
+  data[KEYS.fuel_fin_left] = valFuel(KEYS.fuel_fin_left);
+  data[KEYS.fuel_fin_right] = valFuel(KEYS.fuel_fin_right);
+
+  data[KEYS.aceite] = String($(KEYS.aceite).value || "").trim().replace(",", ".");
+  data[KEYS.observaciones] = String($(KEYS.observaciones).value || "").trim();
+
+  showOverlay(true);
+  try{
+    if (mode === "new") {
+      const res = await apiPost("add", { data });
+      // refrescar cache desde server en background (pero inmediato para consistencia)
+      await syncAll();
+    } else {
+      await apiPost("save", { rowIndex, data });
+      await syncAll();
+    }
+    volver();
+  } catch(err){
+    setFormError("Error al guardar:\n" + (err && err.message ? err.message : err));
+  } finally{
+    showOverlay(false);
+  }
+}
+
+function volver(){ showList(); reiniciarLista(); }
+function exportar(){ alert("Exportar (pendiente)"); }
+
+// ====================== Startup ======================
+async function initFromCache(){
+  // cache aeros
+  try{ AEROS = await dbGetAll(STORE_AER); } catch(_){ AEROS = []; }
+  // si no hay cache y estamos online => sync
+  const recs = await dbGetAll(STORE_REC);
+  if (!recs.length && isOnline()){
+    await syncAll();
+  }
+}
+
+document.addEventListener("keydown", function(e){
+  if (e.key === "Escape") {
+    closeAddAeroModal();
+    closeViewAeroModal();
+    closeAllDropdowns();
+  }
+});
+
+// expose some functions to inline onclick
+window.toggleOrden = toggleOrden;
+window.cargarMas = cargarMas;
+window.editar = editar;
+window.nuevo = nuevo;
+window.guardar = guardar;
+window.volver = volver;
+window.exportar = exportar;
+
+window.aeroOpen = aeroOpen;
+window.aeroInputChanged = aeroInputChanged;
+window.aeroSelect = aeroSelect;
+
+window.openAddAeroModal = openAddAeroModal;
+window.closeAddAeroModal = closeAddAeroModal;
+window.closeAddAeroIfBackdrop = closeAddAeroIfBackdrop;
+window.confirmAddAero = confirmAddAero;
+
+window.openViewAero = openViewAero;
+window.closeViewAeroModal = closeViewAeroModal;
+window.closeViewAeroIfBackdrop = closeViewAeroIfBackdrop;
+
+window.selectFuel = selectFuel;
+window.incLandings = incLandings;
+window.decLandings = decLandings;
+window.setOilBarNorm = setOilBarNorm;
+
+window.syncAll = syncAll;
+
+(async function boot(){
+  try{
+setOnlineBadge();
+
+
+// Online/offline handlers
+setLastSyncLabel();
+
+window.addEventListener("online", async () => {
+  setOnlineBadge();
+  // Auto-sync al volver a estar online
+  try{
+    await syncAll();
+    await reiniciarLista();
+  }catch(err){
+    console.error(err);
+    setStatus("Error al sincronizar:\n" + (err && err.message ? err.message : String(err)));
+  }
+});
+
+window.addEventListener("offline", () => {
+  setOnlineBadge();
+  reiniciarLista();
+});
+
+
+  // SW
+  if ("serviceWorker" in navigator) {
+    try{ await navigator.serviceWorker.register("sw.js"); } catch(e){ console.warn("SW fail", e); }
+  }
+
+  showList();
+  actualizarTextoBotonOrden();
+
+  await initFromCache();
+  await reiniciarLista();
+
+  // defaults
+  setOilBarNorm("");
+  setLandings(1);
+
+  } catch(err){
+    console.error(err);
+    showFatal('Error iniciando app:\n' + (err && err.message ? err.message : String(err)));
+  }
+})();
+
+function forceUppercaseIcao(){
+  ['origen','destino','newAeroCode'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    el.addEventListener('input', ()=>{ el.value = String(el.value||'').toUpperCase(); }, { passive:true });
+  });
+}
+window.addEventListener('DOMContentLoaded', forceUppercaseIcao);
+
+
+function initOnlineWatcher(){
+  function refresh(){ setOnlineBadge(!!navigator.onLine); }
+  window.addEventListener("online",  () => { refresh(); try{ onBecameOnline && onBecameOnline(); }catch(_){ }});
+  window.addEventListener("offline", () => { refresh(); });
+  refresh();
+}
+
+
+try{ initOnlineWatcher(); }catch(_){ }
