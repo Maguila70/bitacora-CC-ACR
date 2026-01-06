@@ -2,13 +2,13 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Bitácora <span class="badge" id="onlineBadge"><span class="dot" id="onlineDot"></span>Online</span></title>
 
-  <link rel="manifest" href="manifest.json">
+  <link rel="manifest" href="/bitacora-CC-ACR/manifest.webmanifest">
   <meta name="theme-color" content="#1976d2">
   <link rel="stylesheet" href="styles.css">
 
@@ -248,7 +248,7 @@
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js', { scope: './' }).catch(console.warn);
+      navigator.serviceWorker.register('/bitacora-CC-ACR/sw.js', { scope: '/bitacora-CC-ACR/' }).catch(console.warn);
     });
   }
 

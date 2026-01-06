@@ -1,13 +1,13 @@
 /* Bitácora PWA Service Worker */
-const CACHE_NAME = "bitacora-cache-v20260106b";
+const CACHE_NAME = "bitacora-cache-v20260106c";
 const ASSETS = [
-  "./",
-  "./index.html",
-  "./styles.css",
-  "./app.js",
-  "./manifest.json",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png"
+  "/bitacora-CC-ACR/",
+  "/bitacora-CC-ACR/index.html",
+  "/bitacora-CC-ACR/styles.css",
+  "/bitacora-CC-ACR/app.js",
+  "/bitacora-CC-ACR/manifest.webmanifest",
+  "/bitacora-CC-ACR/icons/icon-192.png",
+  "/bitacora-CC-ACR/icons/icon-512.png"
 ];
 
 self.addEventListener("install", (event) => {
@@ -45,7 +45,7 @@ self.addEventListener("fetch", (event) => {
           return net;
         } catch (_) {
           const cache = await caches.open(CACHE_NAME);
-          return (await cache.match("./index.html")) || (await cache.match("./")) || Response.error();
+          return (await cache.match("/bitacora-CC-ACR/index.html")) || (await cache.match("./")) || Response.error();
         }
       })()
     );
